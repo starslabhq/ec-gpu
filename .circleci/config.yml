@@ -101,7 +101,7 @@ jobs:
       - run: source $BASH_ENV
       - run:
           name: Run cargo clippy
-          command: cargo clippy --all-features
+          command: cargo clippy --all-features -- -D warnings
 
   build:
     executor: default
