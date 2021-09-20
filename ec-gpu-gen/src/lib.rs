@@ -260,6 +260,8 @@ mod tests {
             unsafe {
                 kernel.enq().unwrap();
             }
+            // Make sure the queue is fully processed
+            PROQUE.finish().unwrap();
             buffer.read(&mut cpu_buffer).enq().unwrap();
 
             cpu_buffer[0].0
