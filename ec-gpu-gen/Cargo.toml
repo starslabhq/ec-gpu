@@ -14,7 +14,7 @@ ec-gpu = "0.1.0"
 [dev-dependencies]
 ff = "0.11.0"
 blstrs = { version = "0.4.0", features = ["gpu"] }
-rust-gpu-tools = { version = "0.5.0", default-features = false }
+rust-gpu-tools = { path = "../../rust-gpu-tools", default-features = false }
 rand = "0.8"
 lazy_static = "1.2"
 tempfile = "3.2.0"
