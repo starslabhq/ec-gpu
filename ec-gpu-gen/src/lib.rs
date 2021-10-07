@@ -467,20 +467,20 @@ mod tests {
     #[test]
     fn test_double() {
         //let mut rng = thread_rng();
-        //for _ in 0..10 {
-            //let a = Scalar::random(&mut rng);
+        ////for _ in 0..10 {
+        //    let a = Scalar::random(&mut rng);
+        //    println!("a: {:?}", a);
+        //    let b = a.double();
+        //
+        //    assert_eq!(call_kernel("test_double_32", &vec![GpuScalar(a)], &[]), b);
+
             let a = Scalar::from_u64s_le(&[1,2,3,4]).unwrap();
             println!("a: {:?}", a);
-            //let a = Scalar::one();
             let b = a.double();
 
-            //assert_eq!(call_kernel("test_double_32", &vec![GpuScalar(a)], &[]), b);
             let result = call_kernel("test_double_32", &vec![GpuScalar(a)], &[]);
             println!("vmx: result: {:?}", result.to_bytes_le());
             assert_eq!(result, b);
-            //#[cfg(not(feature = "tests-cuda"))]
-            //assert_eq!(call_kernel("test_double_64", &vec![GpuScalar(a)], &[]), b);
-        //}
     }
 
     #[test]
