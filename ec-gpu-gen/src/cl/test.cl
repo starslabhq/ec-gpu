@@ -13,7 +13,12 @@ DEVICE Scalar32 vmx_double(Scalar32 a) {
             printf("Scalar32_LIMB_BITS - 1: %u\n", Scalar32_LIMB_BITS - 1);
             printf("a.val[i - 1] >> (Scalar32_LIMB_BITS - 1: %u\n", a.val[i - 1] >> (Scalar32_LIMB_BITS - 1));
             printf("(a.val[i] << 1) | (a.val[i - 1] >> (Scalar32_LIMB_BITS - 1): %u\n", (a.val[i] << 1) | (a.val[i - 1] >> (Scalar32_LIMB_BITS - 1)));
-            printf("(a.val[i] << 1) | (a.val[i - 1] >> (Scalar32_LIMB_BITS - 1): %u\n", (a.val[i] << 1) | (a.val[i - 1] >> (Scalar32_LIMB_BITS - 1)));
+            printf("(1698717651 << 1) | (972342711 >> (Scalar32_LIMB_BITS - 1): %u\n", (1698717651 << 1) | (972342711 >> (Scalar32_LIMB_BITS - 1)));
+            printf("(1698717651 << 1) | (972342711 >> 31): %u\n", (1698717651 << 1) | (972342711 >> 31));
+            printf("(a.val[i] << 1) | (972342711 >> 31): %u\n", (a.val[i] << 1) | (972342711 >> 31));
+            printf("(a.val[i] << 1) | (a.val[i - 1] >> 31): %u\n", (a.val[i] << 1) | (a.val[i - 1] >> 31));
+            printf("(a.val[i] << 1) | (a.val[i - 1] >> 31), a.val[i - 1]: %u %u\n", (a.val[i] << 1) | (a.val[i - 1] >> 31), a.val[i - 1]);
+            printf("(a.val[i] << 1) | (a.val[i - 1] >> 31), a.val[i - 1] >> 31: %u %u\n", (a.val[i] << 1) | (a.val[i - 1] >> 31), (a.val[i - 1] >> 31));
         }
 
         a.val[i] = (a.val[i] << 1) | (a.val[i - 1] >> (Scalar32_LIMB_BITS - 1));
