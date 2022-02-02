@@ -3,6 +3,3 @@ members = [
   "ec-gpu",
   "ec-gpu-gen"
 ]
-
-[patch.crates-io]
-rust-gpu-tools = { git = "https://github.com/filecoin-project/rust-gpu-tools" }
