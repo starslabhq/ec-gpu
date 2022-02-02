@@ -39,5 +39,9 @@ pub mod multiexp_cpu;
 #[cfg(any(feature = "fft", feature = "multiexp"))]
 pub mod threadpool;
 
+/// Re-export rust-gpu-tools as things like [`rust_gpu_tools::Device`] might be needed.
+#[cfg(any(feature = "cuda", feature = "opencl"))]
+pub use rust_gpu_tools;
+
 pub use error::{EcError, EcResult};
 pub use source::{common, field, gen_ec_source, gen_source, Limb, Limb32, Limb64};
