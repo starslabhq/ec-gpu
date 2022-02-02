@@ -35,11 +35,8 @@ pub mod multiexp;
 /// Multiexponentiation on the CPU.
 #[cfg(feature = "multiexp")]
 pub mod multiexp_cpu;
-#[cfg(all(
-    any(feature = "fft", feature = "multiexp"),
-    any(feature = "cuda", feature = "opencl")
-))]
 /// Helpers for multithreaded code.
+#[cfg(any(feature = "fft", feature = "multiexp"))]
 pub mod threadpool;
 
 pub use error::{EcError, EcResult};
