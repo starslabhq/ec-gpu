@@ -1,5 +1,4 @@
-// TODO vmx 2021-12-02: document everything
-//#![warn(missing_docs)]
+#![warn(missing_docs)]
 //! CUDA/OpenCL code generator for finite-field arithmetic over prime fields and elliptic curve
 //! arithmetic constructed with Rust.
 //!
