@@ -40,7 +40,7 @@ impl<'a, E: Engine + GpuEngine> SingleFftKernel<'a, E> {
         device: &Device,
         maybe_abort: Option<&'a (dyn Fn() -> bool + Send + Sync)>,
     ) -> EcResult<Self> {
-        let program = program::program::<E>(device)?;
+        let program = program::program(device)?;
 
         Ok(SingleFftKernel {
             program,

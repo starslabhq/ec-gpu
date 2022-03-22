@@ -1,8 +1,6 @@
 use std::env;
 
-use ec_gpu::GpuEngine;
 use log::info;
-use pairing::Engine;
 #[cfg(feature = "cuda")]
 use rust_gpu_tools::cuda;
 #[cfg(feature = "opencl")]
@@ -49,19 +47,13 @@ fn select_framework(default_framework: Framework) -> EcResult<Framework> {
 ///
 /// If the device supports CUDA, then CUDA is used, else OpenCL. You can force a selection with
 /// the environment variable `EC_GPU_FRAMEWORK`, which can be set either to `cuda` or `opencl`.
-pub fn program<E>(device: &Device) -> EcResult<Program>
-where
-    E: Engine + GpuEngine,
-{
+pub fn program(device: &Device) -> EcResult<Program> {
     let framework = select_framework(device.framework())?;
-    program_use_framework::<E>(device, &framework)
+    program_use_framework(device, &framework)
 }
 
 /// Returns the program for the specified [`rust_gpu_tools::device::Framework`].
-pub fn program_use_framework<E>(device: &Device, framework: &Framework) -> EcResult<Program>
-where
-    E: Engine + GpuEngine,
-{
+pub fn program_use_framework(device: &Device, framework: &Framework) -> EcResult<Program> {
     match framework {
         #[cfg(feature = "cuda")]
         Framework::Cuda => {
