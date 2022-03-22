@@ -7,14 +7,13 @@ use ff::PrimeField;
 use group::{prime::PrimeCurveAffine, Group};
 use log::{error, info, warn};
 use pairing::Engine;
-use rust_gpu_tools::{program_closures, Device, Program, Vendor, CUDA_CORES};
+use rust_gpu_tools::{program_closures, Device, Program, CUDA_CORES};
 use yastl::Scope;
 
 use crate::{
     error::{EcError, EcResult},
     program,
     threadpool::Worker,
-    Limb32, Limb64,
 };
 
 const MAX_WINDOW_SIZE: usize = 10;
@@ -120,11 +119,7 @@ where
         let best_n = calc_best_chunk_size(MAX_WINDOW_SIZE, core_count, exp_bits);
         let n = std::cmp::min(max_n, best_n);
 
-        let source = match device.vendor() {
-            Vendor::Nvidia => crate::gen_source::<E, Limb64>(),
-            _ => crate::gen_source::<E, Limb32>(),
-        };
-        let program = program::program::<E>(device, &source)?;
+        let program = program::program::<E>(device)?;
 
         Ok(SingleMultiexpKernel {
             program,

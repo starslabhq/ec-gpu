@@ -1,25 +1,29 @@
-/// The build script is needed to compile the CUDA kernel.
-///
-/// It will compile the kernel at compile time if the `fft` and/or the `multiexp` features are
-/// enabled.
+use std::path::PathBuf;
+use std::{env, fs};
+
+use blstrs::Bls12;
+
+#[path = "src/source.rs"]
+mod source;
+
+/// The build script is use to generate the CUDA kernel and OpenCL source at compile-time, if the
+/// if the `fft` and/or the `multiexp` features are enabled.
 #[cfg(all(
-    feature = "cuda",
     any(feature = "fft", feature = "multiexp"),
     not(feature = "cargo-clippy")
 ))]
 fn main() {
-    use std::path::PathBuf;
-    use std::process::Command;
-    use std::{env, fs};
+    #[cfg(feature = "cuda")]
+    generate_cuda();
+    #[cfg(feature = "opencl")]
+    generate_opencl();
+}
 
-    use blstrs::Bls12;
+#[cfg(feature = "cuda")]
+fn generate_cuda() {
     use sha2::{Digest, Sha256};
 
-    #[path = "src/source.rs"]
-    mod source;
-
     let kernel_source = source::gen_source::<Bls12, source::Limb32>();
-
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR was not set.");
 
     // Make it possible to override the default options. Though the source and output file is
@@ -27,7 +31,7 @@ fn main() {
     let mut nvcc = match env::var("EC_GPU_CUDA_NVCC_ARGS") {
         Ok(args) => execute::command(format!("nvcc {}", args)),
         Err(_) => {
-            let mut command = Command::new("nvcc");
+            let mut command = std::process::Command::new("nvcc");
             command
                 .arg("--optimize=6")
                 // Compile with as many threads as CPUs are available.
@@ -41,8 +45,8 @@ fn main() {
         }
     };
 
-    // Hash the source and and the compile flags. Use that as the filename, so that the kernel is
-    // only rebuilt if any of them change.
+    // Hash the source and the compile flags. Use that as the filename, so that the kernel is only
+    // rebuilt if any of them change.
     let mut hasher = Sha256::new();
     hasher.update(kernel_source.as_bytes());
     hasher.update(&format!("{:?}", &nvcc));
@@ -87,13 +91,38 @@ fn main() {
     );
 }
 
+#[cfg(feature = "opencl")]
+fn generate_opencl() {
+    let kernel_source = source::gen_source::<Bls12, source::Limb64>();
+    let out_dir = env::var("OUT_DIR").expect("OUT_DIR was not set.");
+
+    // Generating the kernel source is cheap, hence use a fixed name and override it on every
+    // build.
+    let source_path: PathBuf = [&out_dir, "kernel.cl"].iter().collect();
+
+    fs::write(&source_path, &kernel_source).unwrap_or_else(|_| {
+        panic!(
+            "Cannot write kernel source at {}.",
+            source_path.to_str().unwrap()
+        )
+    });
+
+    // For OpenCL we only need the kernel source, it is compiled at runtime.
+    #[cfg(feature = "opencl")]
+    println!(
+        "cargo:rustc-env=OPENCL_KERNEL_SOURCE={}",
+        source_path.to_str().unwrap()
+    );
+}
+
 #[cfg(not(all(
-    feature = "cuda",
     any(feature = "fft", feature = "multiexp"),
     not(feature = "cargo-clippy")
 )))]
 fn main() {
-    // This is a hack for the case when the `cuda` and `cargo-clippy` features are enabled. For
-    // Clippy we don't need a properly compiled kernel, but just some arbitrary bytes.
+    // This is a hack for the case when we run Clippy while we don't generate any GPU kernel.
+    // Clippy we don't need a proper source or properly compiled kernel, but just some arbitrary
+    // bytes.
     println!("cargo:rustc-env=CUDA_KERNEL_FATBIN=../build.rs");
+    println!("cargo:rustc-env=OPENCL_KERNEL_SOURCE=../build.rs");
 }

@@ -49,20 +49,16 @@ fn select_framework(default_framework: Framework) -> EcResult<Framework> {
 ///
 /// If the device supports CUDA, then CUDA is used, else OpenCL. You can force a selection with
 /// the environment variable `EC_GPU_FRAMEWORK`, which can be set either to `cuda` or `opencl`.
-pub fn program<E>(device: &Device, source: &str) -> EcResult<Program>
+pub fn program<E>(device: &Device) -> EcResult<Program>
 where
     E: Engine + GpuEngine,
 {
     let framework = select_framework(device.framework())?;
-    program_use_framework::<E>(device, source, &framework)
+    program_use_framework::<E>(device, &framework)
 }
 
 /// Returns the program for the specified [`rust_gpu_tools::device::Framework`].
-pub fn program_use_framework<E>(
-    device: &Device,
-    #[allow(unused_variables)] source: &str,
-    framework: &Framework,
-) -> EcResult<Program>
+pub fn program_use_framework<E>(device: &Device, framework: &Framework) -> EcResult<Program>
 where
     E: Engine + GpuEngine,
 {
@@ -78,6 +74,7 @@ where
         #[cfg(feature = "opencl")]
         Framework::Opencl => {
             info!("Using kernel on OpenCL.");
+            let source = include_str!(env!("OPENCL_KERNEL_SOURCE"));
             let opencl_device = device.opencl_device().ok_or(GPUError::DeviceNotFound)?;
             let program = opencl::Program::from_opencl(opencl_device, source)?;
             Ok(Program::Opencl(program))
