@@ -3,3 +3,6 @@ members = [
   "ec-gpu",
   "ec-gpu-gen"
 ]
+
+[patch.crates-io]
+ec-gpu = { path = "./ec-gpu" }

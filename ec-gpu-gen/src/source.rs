@@ -10,8 +10,11 @@ static EC_SRC: &str = include_str!("cl/ec.cl");
 static FFT_SRC: &str = include_str!("cl/fft.cl");
 static MULTIEXP_SRC: &str = include_str!("cl/multiexp.cl");
 
+/// The number of 32-bit limbs.
+pub const NUM_LIMBS: usize = 8;
+
 /// Generates the source for FFT and Multiexp operations.
-pub fn gen_source<E: GpuEngine, L: Limb>() -> String {
+pub fn gen_source<E: GpuEngine<NUM_LIMBS>, L: Limb>() -> String {
     vec![
         common(),
         gen_ec_source::<E, L>(),
@@ -25,7 +28,7 @@ pub fn gen_source<E: GpuEngine, L: Limb>() -> String {
 /// Generates the source for the elliptic curve and group operations, as defined by `E`.
 ///
 /// The code from the [`common()`] call needs to be included before this on is used.
-pub fn gen_ec_source<E: GpuEngine, L: Limb>() -> String {
+pub fn gen_ec_source<E: GpuEngine<NUM_LIMBS>, L: Limb>() -> String {
     vec![
         field::<E::Scalar, L>("Fr"),
         field::<E::Fp, L>("Fq"),
@@ -77,15 +80,15 @@ pub trait Limb: Sized + Clone + Copy {
     /// Returns the type that OpenCL is using to represent the limb.
     fn opencl_type() -> &'static str;
     /// Returns the limbs that represent the multiplicative identity of the given field.
-    fn one_limbs<F: GpuField>() -> Vec<Self>;
+    fn one_limbs<F: GpuField<NUM_LIMBS>>() -> Vec<Self>;
     /// Returns the field modulus in non-Montgomery form as a vector of `Self::LimbType` (least
     /// significant limb first).
-    fn modulus_limbs<F: GpuField>() -> Vec<Self>;
+    fn modulus_limbs<F: GpuField<NUM_LIMBS>>() -> Vec<Self>;
     /// Calculate the `INV` parameter of Montgomery reduction algorithm for 32/64bit limbs
     /// * `a` - Is the first limb of modulus.
     fn calc_inv(a: Self) -> Self;
     /// Returns the limbs that represent `R ^ 2 mod P`.
-    fn calculate_r2<F: GpuField>() -> Vec<Self>;
+    fn calculate_r2<F: GpuField<NUM_LIMBS>>() -> Vec<Self>;
 }
 
 /// A 32-bit limb.
@@ -108,11 +111,11 @@ impl Limb for Limb32 {
     fn opencl_type() -> &'static str {
         "uint"
     }
-    fn one_limbs<F: GpuField>() -> Vec<Self> {
-        F::one().into_iter().map(Self::new).collect()
+    fn one_limbs<F: GpuField<NUM_LIMBS>>() -> Vec<Self> {
+        <F as GpuField<NUM_LIMBS>>::one().map(Self::new).to_vec()
     }
-    fn modulus_limbs<F: GpuField>() -> Vec<Self> {
-        F::modulus().into_iter().map(Self::new).collect()
+    fn modulus_limbs<F: GpuField<NUM_LIMBS>>() -> Vec<Self> {
+        F::modulus().map(Self::new).to_vec()
     }
     fn calc_inv(a: Self) -> Self {
         let mut inv = 1u32;
@@ -122,8 +125,8 @@ impl Limb for Limb32 {
         }
         Self(inv.wrapping_neg())
     }
-    fn calculate_r2<F: GpuField>() -> Vec<Self> {
-        F::r2().into_iter().map(Self::new).collect()
+    fn calculate_r2<F: GpuField<NUM_LIMBS>>() -> Vec<Self> {
+        F::r2().map(Self::new).to_vec()
     }
 }
 
@@ -147,14 +150,14 @@ impl Limb for Limb64 {
     fn opencl_type() -> &'static str {
         "ulong"
     }
-    fn one_limbs<F: GpuField>() -> Vec<Self> {
-        F::one()
+    fn one_limbs<F: GpuField<NUM_LIMBS>>() -> Vec<Self> {
+        <F as GpuField<NUM_LIMBS>>::one()
             .chunks(2)
             .map(|chunk| Self::new(((chunk[1] as u64) << 32) + (chunk[0] as u64)))
             .collect()
     }
 
-    fn modulus_limbs<F: GpuField>() -> Vec<Self> {
+    fn modulus_limbs<F: GpuField<NUM_LIMBS>>() -> Vec<Self> {
         F::modulus()
             .chunks(2)
             .map(|chunk| Self::new(((chunk[1] as u64) << 32) + (chunk[0] as u64)))
@@ -169,7 +172,7 @@ impl Limb for Limb64 {
         }
         Self(inv.wrapping_neg())
     }
-    fn calculate_r2<F: GpuField>() -> Vec<Self> {
+    fn calculate_r2<F: GpuField<NUM_LIMBS>>() -> Vec<Self> {
         F::r2()
             .chunks(2)
             .map(|chunk| Self::new(((chunk[1] as u64) << 32) + (chunk[0] as u64)))
@@ -192,7 +195,7 @@ fn const_field<L: Limb>(name: &str, limbs: Vec<L>) -> String {
 /// Generates CUDA/OpenCL constants and type definitions of prime-field `F`
 fn params<F, L: Limb>() -> String
 where
-    F: GpuField,
+    F: GpuField<NUM_LIMBS>,
 {
     let one = L::one_limbs::<F>(); // Get Montgomery form of F::one()
     let p = L::modulus_limbs::<F>(); // Get field modulus in non-Montgomery form
@@ -225,7 +228,7 @@ where
 /// Generates PTX-Assembly implementation of FIELD_add_/FIELD_sub_
 fn field_add_sub_nvidia<F, L: Limb>() -> Result<String, std::fmt::Error>
 where
-    F: GpuField,
+    F: GpuField<NUM_LIMBS>,
 {
     let mut result = String::new();
     let (ptx_type, ptx_reg) = L::ptx_info();
@@ -294,7 +297,7 @@ where
 /// The code from the [`common()`] call needs to be included before this on is used.
 pub fn field<F, L: Limb>(name: &str) -> String
 where
-    F: GpuField,
+    F: GpuField<NUM_LIMBS>,
 {
     [
         params::<F, L>(),

@@ -25,7 +25,8 @@ thiserror = "1.0.30"
 yastl = "0.1.2"
 
 [dev-dependencies]
-blstrs = { version = "0.4.0", features = ["gpu"] }
+#blstrs = { version = "0.4.0", features = ["gpu"] }
+blstrs = { path = "../../blstrs", features = ["gpu"] }
 rand = "0.8"
 lazy_static = "1.2"
 tempfile = "3.2.0"
@@ -33,14 +34,16 @@ rand_core = "0.6.3"
 rand_xorshift = "0.3.0"
 
 [build-dependencies]
-blstrs = "0.4.0"
+#blstrs = "0.4.0"
+blstrs = { path = "../../blstrs" }
 ec-gpu = "0.1.0"
 execute = "0.2.9"
 hex = "0.4"
 sha2 = "0.10"
 
 [features]
-default = ["cuda", "fft", "multiexp", "opencl"]
+#default = ["cuda", "fft", "multiexp", "opencl"]
+default = ["fft", "multiexp", "opencl"]
 cuda = ["rust-gpu-tools/cuda"]
 opencl = ["rust-gpu-tools/opencl"]
 fft = []

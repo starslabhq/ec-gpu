@@ -9,7 +9,7 @@ use rust_gpu_tools::{program_closures, Device, LocalBuffer, Program};
 use crate::threadpool::THREAD_POOL;
 use crate::{
     error::{EcError, EcResult},
-    program,
+    program, NUM_LIMBS,
 };
 
 const LOG2_MAX_ELEMENTS: usize = 32; // At most 2^32 elements is supported.
@@ -19,7 +19,7 @@ const MAX_LOG2_LOCAL_WORK_SIZE: u32 = 7; // 128
 /// FFT kernel for a single GPU.
 pub struct SingleFftKernel<'a, F>
 where
-    F: Field + GpuField,
+    F: Field + GpuField<NUM_LIMBS>,
 {
     program: Program,
     /// An optional function which will be called at places where it is possible to abort the FFT
@@ -29,7 +29,7 @@ where
     _phantom: std::marker::PhantomData<F>,
 }
 
-impl<'a, F: Field + GpuField> SingleFftKernel<'a, F> {
+impl<'a, F: Field + GpuField<NUM_LIMBS>> SingleFftKernel<'a, F> {
     /// Create a new kernel for a device.
     ///
     /// The `maybe_abort` function is called when it is possible to abort the computation, without
@@ -132,14 +132,14 @@ impl<'a, F: Field + GpuField> SingleFftKernel<'a, F> {
 /// One FFT kernel for each GPU available.
 pub struct FftKernel<'a, F>
 where
-    F: Field + GpuField,
+    F: Field + GpuField<NUM_LIMBS>,
 {
     kernels: Vec<SingleFftKernel<'a, F>>,
 }
 
 impl<'a, F> FftKernel<'a, F>
 where
-    F: Field + GpuField,
+    F: Field + GpuField<NUM_LIMBS>,
 {
     /// Create new kernels, one for each given device.
     pub fn create(devices: &[&Device]) -> EcResult<Self> {
