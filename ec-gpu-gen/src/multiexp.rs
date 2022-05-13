@@ -2,7 +2,6 @@ use std::any::TypeId;
 use std::ops::AddAssign;
 use std::sync::{Arc, RwLock};
 
-use ec_gpu::GpuEngine;
 use ff::PrimeField;
 use group::{prime::PrimeCurveAffine, Group};
 use log::{error, info, warn};
@@ -36,7 +35,7 @@ fn get_cuda_cores_count(name: &str) -> usize {
 /// Multiexp kernel for a single GPU.
 pub struct SingleMultiexpKernel<'a, E>
 where
-    E: Engine + GpuEngine,
+    E: Engine,
 {
     program: Program,
     core_count: usize,
@@ -102,7 +101,7 @@ fn exp_size<E: Engine>() -> usize {
 
 impl<'a, E> SingleMultiexpKernel<'a, E>
 where
-    E: Engine + GpuEngine,
+    E: Engine,
 {
     /// Create a new kernel for a device.
     ///
@@ -232,14 +231,14 @@ where
 /// A struct that containts several multiexp kernels for different devices.
 pub struct MultiexpKernel<'a, E>
 where
-    E: Engine + GpuEngine,
+    E: Engine,
 {
     kernels: Vec<SingleMultiexpKernel<'a, E>>,
 }
 
 impl<'a, E> MultiexpKernel<'a, E>
 where
-    E: Engine + GpuEngine,
+    E: Engine,
 {
     /// Create new kernels, one for each given device.
     pub fn create(devices: &[&Device]) -> EcResult<Self> {
@@ -408,7 +407,6 @@ mod tests {
         for<'a> &'a Q: QueryDensity,
         D: Send + Sync + 'static + Clone + AsRef<Q>,
         G: PrimeCurveAffine,
-        E: GpuEngine,
         E: Engine<Fr = G::Scalar>,
         S: SourceBuilder<G>,
     {
