@@ -8,10 +8,10 @@
  * threads running in parallel for calculating a multiexp instance.
  */
 
-KERNEL void POINT_bellman_multiexp(
-    GLOBAL POINT_affine *bases,
-    GLOBAL POINT_projective *buckets,
-    GLOBAL POINT_projective *results,
+KERNEL void FIELD_bellman_multiexp(
+    GLOBAL FIELD_point_affine *bases,
+    GLOBAL FIELD_point_projective *buckets,
+    GLOBAL FIELD_point_projective *results,
     GLOBAL EXPONENT *exps,
     uint n,
     uint num_groups,
@@ -28,7 +28,7 @@ KERNEL void POINT_bellman_multiexp(
   // Each thread has its own set of buckets in global memory.
   buckets += bucket_len * gid;
 
-  const POINT_projective local_zero = POINT_ZERO;
+  const FIELD_point_projective local_zero = FIELD_POINT_ZERO;
   for(uint i = 0; i < bucket_len; i++) buckets[i] = local_zero;
 
   const uint len = (uint)ceil(n / (float)num_groups); // Num of elements in each group
@@ -40,7 +40,7 @@ KERNEL void POINT_bellman_multiexp(
   const uint bits = (gid % num_windows) * window_size;
   const ushort w = min((ushort)window_size, (ushort)(EXPONENT_BITS - bits));
 
-  POINT_projective res = POINT_ZERO;
+  FIELD_point_projective res = FIELD_POINT_ZERO;
   for(uint i = nstart; i < nend; i++) {
     uint ind = EXPONENT_get_bits(exps[i], bits, w);
 
@@ -49,10 +49,10 @@ KERNEL void POINT_bellman_multiexp(
       // tremendously faster!
       // 511 is chosen because it's half of the maximum bucket len, but
       // any other number works... Bigger indices seems to be better...
-      if(ind == 511) buckets[510] = POINT_add_mixed(buckets[510], bases[i]);
-      else if(ind--) buckets[ind] = POINT_add_mixed(buckets[ind], bases[i]);
+      if(ind == 511) buckets[510] = FIELD_point_add_mixed(buckets[510], bases[i]);
+      else if(ind--) buckets[ind] = FIELD_point_add_mixed(buckets[ind], bases[i]);
     #else
-      if(ind--) buckets[ind] = POINT_add_mixed(buckets[ind], bases[i]);
+      if(ind--) buckets[ind] = FIELD_point_add_mixed(buckets[ind], bases[i]);
     #endif
   }
 
@@ -60,10 +60,10 @@ KERNEL void POINT_bellman_multiexp(
   // e.g. 3a + 2b + 1c = a +
   //                    (a) + b +
   //                    ((a) + b) + c
-  POINT_projective acc = POINT_ZERO;
+  FIELD_point_projective acc = FIELD_POINT_ZERO;
   for(int j = bucket_len - 1; j >= 0; j--) {
-    acc = POINT_add(acc, buckets[j]);
-    res = POINT_add(res, acc);
+    acc = FIELD_point_add(acc, buckets[j]);
+    res = FIELD_point_add(res, acc);
   }
 
   results[gid] = res;
