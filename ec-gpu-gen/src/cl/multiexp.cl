@@ -10,8 +10,8 @@
 
 KERNEL void FIELD_bellman_multiexp(
     GLOBAL FIELD_point_affine *bases,
-    GLOBAL FIELD_point_projective *buckets,
-    GLOBAL FIELD_point_projective *results,
+    GLOBAL FIELD_point_jacobian *buckets,
+    GLOBAL FIELD_point_jacobian *results,
     GLOBAL EXPONENT *exps,
     uint n,
     uint num_groups,
@@ -28,7 +28,7 @@ KERNEL void FIELD_bellman_multiexp(
   // Each thread has its own set of buckets in global memory.
   buckets += bucket_len * gid;
 
-  const FIELD_point_projective local_zero = FIELD_POINT_ZERO;
+  const FIELD_point_jacobian local_zero = FIELD_POINT_ZERO;
   for(uint i = 0; i < bucket_len; i++) buckets[i] = local_zero;
 
   const uint len = (uint)ceil(n / (float)num_groups); // Num of elements in each group
@@ -40,7 +40,7 @@ KERNEL void FIELD_bellman_multiexp(
   const uint bits = (gid % num_windows) * window_size;
   const ushort w = min((ushort)window_size, (ushort)(EXPONENT_BITS - bits));
 
-  FIELD_point_projective res = FIELD_POINT_ZERO;
+  FIELD_point_jacobian res = FIELD_POINT_ZERO;
   for(uint i = nstart; i < nend; i++) {
     uint ind = EXPONENT_get_bits(exps[i], bits, w);
 
@@ -60,7 +60,7 @@ KERNEL void FIELD_bellman_multiexp(
   // e.g. 3a + 2b + 1c = a +
   //                    (a) + b +
   //                    ((a) + b) + c
-  FIELD_point_projective acc = FIELD_POINT_ZERO;
+  FIELD_point_jacobian acc = FIELD_POINT_ZERO;
   for(int j = bucket_len - 1; j >= 0; j--) {
     acc = FIELD_point_add(acc, buckets[j]);
     res = FIELD_point_add(res, acc);

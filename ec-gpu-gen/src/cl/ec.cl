@@ -1,6 +1,6 @@
 // Elliptic curve operations (Short Weierstrass Jacobian form)
 
-#define FIELD_POINT_ZERO ((FIELD_point_projective){FIELD_ZERO, FIELD_ONE, FIELD_ZERO})
+#define FIELD_POINT_ZERO ((FIELD_point_jacobian){FIELD_ZERO, FIELD_ONE, FIELD_ZERO})
 
 typedef struct {
   FIELD x;
@@ -11,10 +11,10 @@ typedef struct {
   FIELD x;
   FIELD y;
   FIELD z;
-} FIELD_point_projective;
+} FIELD_point_jacobian;
 
 // http://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#doubling-dbl-2009-l
-DEVICE FIELD_point_projective FIELD_point_double(FIELD_point_projective inp) {
+DEVICE FIELD_point_jacobian FIELD_point_double(FIELD_point_jacobian inp) {
   const FIELD local_zero = FIELD_ZERO;
   if(FIELD_eq(inp.z, local_zero)) {
       return inp;
@@ -42,7 +42,7 @@ DEVICE FIELD_point_projective FIELD_point_double(FIELD_point_projective inp) {
 }
 
 // http://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#addition-madd-2007-bl
-DEVICE FIELD_point_projective FIELD_point_add_mixed(FIELD_point_projective a, FIELD_point_affine b) {
+DEVICE FIELD_point_jacobian FIELD_point_add_mixed(FIELD_point_jacobian a, FIELD_point_affine b) {
   const FIELD local_zero = FIELD_ZERO;
   if(FIELD_eq(a.z, local_zero)) {
     const FIELD local_one = FIELD_ONE;
@@ -67,7 +67,7 @@ DEVICE FIELD_point_projective FIELD_point_add_mixed(FIELD_point_projective a, FI
   FIELD r = FIELD_sub(s2, a.y); r = FIELD_double(r); // r = 2*(S2-Y1)
   const FIELD v = FIELD_mul(a.x, i);
 
-  FIELD_point_projective ret;
+  FIELD_point_jacobian ret;
 
   // X3 = r^2 - J - 2*V
   ret.x = FIELD_sub(FIELD_sub(FIELD_sqr(r), j), FIELD_double(v));
@@ -82,7 +82,7 @@ DEVICE FIELD_point_projective FIELD_point_add_mixed(FIELD_point_projective a, FI
 }
 
 // http://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-0.html#addition-add-2007-bl
-DEVICE FIELD_point_projective FIELD_point_add(FIELD_point_projective a, FIELD_point_projective b) {
+DEVICE FIELD_point_jacobian FIELD_point_add(FIELD_point_jacobian a, FIELD_point_jacobian b) {
 
   const FIELD local_zero = FIELD_ZERO;
   if(FIELD_eq(a.z, local_zero)) return b;
