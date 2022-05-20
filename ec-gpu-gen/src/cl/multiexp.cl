@@ -8,7 +8,7 @@
  * threads running in parallel for calculating a multiexp instance.
  */
 
-KERNEL void FIELD_bellman_multiexp(
+KERNEL void FIELD_EXPONENT_bellman_multiexp(
     GLOBAL FIELD_point_affine *bases,
     GLOBAL FIELD_point_jacobian *buckets,
     GLOBAL FIELD_point_jacobian *results,
