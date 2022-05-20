@@ -10,7 +10,7 @@ DEVICE uint bitreverse(uint n, uint bits) {
 /*
  * FFT algorithm is inspired from: http://www.bealto.com/gpu-fft_group-1.html
  */
-KERNEL void radix_fft(GLOBAL FIELD* x, // Source buffer
+KERNEL void FIELD_radix_fft(GLOBAL FIELD* x, // Source buffer
                       GLOBAL FIELD* y, // Destination buffer
                       GLOBAL FIELD* pq, // Precalculated twiddle factors
                       GLOBAL FIELD* omegas, // [omega, omega^2, omega^4, ...]
