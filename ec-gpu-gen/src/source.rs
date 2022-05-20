@@ -1,10 +1,11 @@
-use std::collections::HashSet;
+use std::cmp::Ordering;
+use std::collections::{BTreeSet, HashSet};
 use std::fmt::{self, Write};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::mem;
 
-use ec_gpu::{GpuField, GpuGroup};
+use ec_gpu::GpuField;
 
 static COMMON_SRC: &str = include_str!("cl/common.cl");
 static FIELD_SRC: &str = include_str!("cl/field.cl");
@@ -46,12 +47,69 @@ impl<L: Limb> fmt::Debug for dyn NameAndSource<L> {
     }
 }
 
+/// This trait is used to sort extension fields after their sub-fields. This is needed in order to
+/// make the GPU source code compile.
+trait ExtensionField {
+    fn extension(&self) -> Option<String>;
+}
+
+/// This trait is there in order to be able to sort extension fields after their sub-fields.
+///
+/// It would be nicer if we could use `Ord` instead of `ExtensionField`, but that's not possible
+/// due to the `PartialOrd` trait not being object safe.
+trait FieldNameAndSource<L: Limb>: NameAndSource<L> + ExtensionField {}
+
+impl<L: Limb> PartialEq for dyn FieldNameAndSource<L> {
+    fn eq(&self, other: &Self) -> bool {
+        self.name() == other.name() && self.extension() == other.extension()
+    }
+}
+
+impl<L: Limb> Eq for dyn FieldNameAndSource<L> {}
+
+impl<L: Limb> PartialOrd for dyn FieldNameAndSource<L> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        // Extension fields sort after their sub-fields, rest is lexicographical.
+        match (self.extension().is_some(), other.extension().is_some()) {
+            (true, true) => Some(self.extension().cmp(&other.extension())),
+            (true, false) => Some(Ordering::Greater),
+            (false, true) => Some(Ordering::Less),
+            (false, false) => Some(self.name().cmp(&other.name())),
+        }
+    }
+}
+
+impl<L: Limb> Ord for dyn FieldNameAndSource<L> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // It's safe to use `unwrap()` here, as `partial_cmp()` always returns `Some`.
+        self.partial_cmp(other).unwrap()
+    }
+}
+
+impl<L: Limb> fmt::Debug for dyn FieldNameAndSource<L> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if f.alternate() {
+            f.debug_map()
+                .entries(vec![("name", self.name()), ("source", self.source())])
+                .finish()
+        } else {
+            write!(f, "{:?}", self.name())
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Field<F: GpuField> {
     name: String,
     /// The name of the extension field if there is one.
     extension: Option<String>,
     _phantom_f: PhantomData<F>,
+}
+
+impl<F: GpuField> PartialEq for Field<F> {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
 }
 
 impl<F: GpuField> Clone for Field<F> {
@@ -73,7 +131,7 @@ impl<F: GpuField> Field<F> {
         }
     }
 
-    pub fn quadric_extension(subfield_name: &str, extension_name: &str) -> Self {
+    pub fn quadratic_extension(subfield_name: &str, extension_name: &str) -> Self {
         Self {
             name: subfield_name.to_string(),
             extension: Some(extension_name.to_string()),
@@ -103,6 +161,14 @@ impl<F: GpuField, L: Limb> NameAndSource<L> for Field<F> {
         }
     }
 }
+
+impl<F: GpuField> ExtensionField for Field<F> {
+    fn extension(&self) -> Option<String> {
+        self.extension.clone()
+    }
+}
+
+impl<F: GpuField, L: Limb> FieldNameAndSource<L> for Field<F> {}
 
 struct Fft<F: GpuField> {
     field: Field<F>,
@@ -147,7 +213,8 @@ pub struct Config<L: Limb> {
     // The concrete types cannot be used, as each item of the set should be able to have its own
     // (different) generic type.
     /// The [`Field`]s that are used in this kernel.
-    fields: HashSet<Box<dyn NameAndSource<L>>>,
+    fields: BTreeSet<Box<dyn FieldNameAndSource<L>>>,
+    //fields: BTreeSet<Box<dyn OrderedNameAndSource<L>>>,
     /// The extension-[`Fft`]s that are used in this kernel.
     ffts: HashSet<Box<dyn NameAndSource<L>>>,
     /// The [`Multiexp`]s that are used in this kernel.
@@ -157,7 +224,7 @@ pub struct Config<L: Limb> {
 impl<L: Limb> Config<L> {
     pub fn new() -> Self {
         Self {
-            fields: HashSet::new(),
+            fields: BTreeSet::new(),
             ffts: HashSet::new(),
             multiexps: HashSet::new(),
         }
@@ -166,10 +233,9 @@ impl<L: Limb> Config<L> {
     /// Add a field to the configuration.
     ///
     /// If it is an extension field, then the extension field *and* the subfield is added.
-    // TODO vmx 2022-05-17: Learn what `'static` actually does here.
     pub fn add_field<F>(mut self, field: Field<F>) -> Self
     where
-        F: GpuField + 'static
+        F: GpuField + 'static,
     {
         if field.extension.is_some() {
             // Also add the subfield (without the extension field).
@@ -181,19 +247,18 @@ impl<L: Limb> Config<L> {
         self
     }
 
-    // TODO vmx 2022-05-17: Learn what `'static` actually does here.
+    /// Add an FFT kernel function to the configuration.
     pub fn add_fft<F>(self, field: Field<F>) -> Self
     where
-        F: GpuField + 'static
+        F: GpuField + 'static,
     {
-        //self.fields.insert(Box::new(field.clone()));
         let mut config = self.add_field(field.clone());
         let fft = Fft { field };
         config.ffts.insert(Box::new(fft));
         config
     }
 
-    // TODO vmx 2022-05-17: Learn what `'static` actually does here.
+    /// Add an Multiexp kernel function to the configuration.
     pub fn add_multiexp<F, Exp>(self, field: Field<F>, exponent: Field<Exp>) -> Self
     where
         F: GpuField + 'static,
@@ -205,8 +270,8 @@ impl<L: Limb> Config<L> {
         config
     }
 
+    /// Generate the GPU kernel source code based on the current configuration.
     pub fn gen_source(&self) -> String {
-        println!("vmx: gen_source: fields: {:?}", self.fields);
         let fields = self.fields.iter().map(|field| field.source()).collect();
         let ffts = self.ffts.iter().map(|fft| fft.source()).collect();
         let multiexps = self
@@ -214,40 +279,8 @@ impl<L: Limb> Config<L> {
             .iter()
             .map(|multiexp| multiexp.source())
             .collect();
-        vec![common(), fields, ffts, multiexps].join("\n\n")
+        vec![COMMON_SRC.to_string(), fields, ffts, multiexps].join("\n\n")
     }
-}
-
-/// The configuration to create a kernel for BLS12-381.
-///
-/// It also contains FFT and Multiexp functionality.
-//pub fn bls12_config<F, S, L>() -> Config<L>
-//where
-//    // Base field
-//    F: GpuField + 'static,
-//    // Scalar field
-//    S: GpuField + 'static,
-//    L: Limb,
-pub fn bls12_config<F, S, L>() -> Config<L>
-where
-    // Base field
-    F: GpuField + 'static,
-    // Scalar field
-    S: GpuField + 'static,
-    L: Limb,
-{
-   Config::new()
-       .add_fft(Field::<S>::new("Fr"))
-       // G1
-       .add_multiexp(
-           Field::<F>::new("Fq"),
-           Field::<S>::new("Fr"),
-       )
-       // G2
-       .add_multiexp(
-           Field::<F>::quadric_extension("Fq", "Fq2"),
-           Field::<S>::new("Fr"),
-       )
 }
 
 /// Trait to implement limbs of different underlying bit sizes.
@@ -479,23 +512,6 @@ where
 
     Ok(result)
 }
-
-///// Returns CUDA/OpenCL source-code of a ff::PrimeField with name `name`
-///// Find details in README.md
-/////
-///// The code from the [`common()`] call needs to be included before this on is used.
-//pub fn field<F, L: Limb>(name: &str) -> String
-//where
-//    F: GpuField,
-//{
-//    [
-//        params::<F, L>(),
-//        field_add_sub_nvidia::<F, L>().expect("preallocated"),
-//        String::from(FIELD_SRC),
-//    ]
-//    .join("\n")
-//    .replace("FIELD", name)
-//}
 
 /// Returns CUDA/OpenCL source-code that contains definitions/functions that are shared across
 /// fields.

@@ -1,35 +1,31 @@
 use std::path::PathBuf;
 use std::{env, fs};
 
-
 #[path = "src/source.rs"]
 mod source;
 
-use source::{Config, Field, Limb, Limb32, Limb64};
+#[cfg(feature = "bls12")]
+use source::{Config, Field, Limb};
+use source::{Limb32, Limb64};
 
+#[cfg(feature = "bls12")]
 fn bls12_config<L: Limb>() -> Config<L> {
     use blstrs::{Fp, Scalar};
 
-  Config::new()
-      .add_fft(Field::<Scalar>::new("Fr"))
-      // G1
-      .add_multiexp(
-          Field::<Fp>::new("Fq"),
-          Field::<Scalar>::new("Fr"),
-      )
-      // G2
-      .add_multiexp(
-          Field::<Fp>::quadric_extension("Fq", "Fq2"),
-          Field::<Scalar>::new("Fr"),
-      )
+    Config::new()
+        .add_fft(Field::<Scalar>::new("Fr"))
+        // G1
+        .add_multiexp(Field::<Fp>::new("Fq"), Field::<Scalar>::new("Fr"))
+        // G2
+        .add_multiexp(
+            Field::<Fp>::quadratic_extension("Fq", "Fq2"),
+            Field::<Scalar>::new("Fr"),
+        )
 }
 
 /// The build script is use to generate the CUDA kernel and OpenCL source at compile-time, if the
-/// if the `fft` and/or the `multiexp` features are enabled.
-#[cfg(all(
-    any(feature = "fft", feature = "multiexp"),
-    not(feature = "cargo-clippy")
-))]
+/// `bls12` feature is enabled.
+#[cfg(all(feature = "bls12", not(feature = "cargo-clippy")))]
 fn main() {
     #[cfg(feature = "cuda")]
     generate_cuda();
@@ -64,8 +60,8 @@ fn generate_cuda() {
                 .arg("--fatbin")
                 .arg("--gpu-architecture=sm_86")
                 .arg("--generate-code=arch=compute_86,code=sm_86");
-                //.arg("--generate-code=arch=compute_80,code=sm_80")
-                //.arg("--generate-code=arch=compute_75,code=sm_75");
+            //.arg("--generate-code=arch=compute_80,code=sm_80")
+            //.arg("--generate-code=arch=compute_75,code=sm_75");
             command
         }
     };
@@ -140,10 +136,7 @@ fn generate_opencl() {
     );
 }
 
-#[cfg(not(all(
-    any(feature = "fft", feature = "multiexp"),
-    not(feature = "cargo-clippy")
-)))]
+#[cfg(not(all(feature = "bls12", not(feature = "cargo-clippy"))))]
 fn main() {
     // This is a hack for the case when we run Clippy while we don't generate any GPU kernel.
     // Clippy we don't need a proper source or properly compiled kernel, but just some arbitrary

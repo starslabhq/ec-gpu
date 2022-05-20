@@ -40,9 +40,9 @@ hex = "0.4"
 sha2 = "0.10"
 
 [features]
-default = ["cuda", "fft", "multiexp", "opencl"]
-#default = ["fft", "multiexp", "opencl"]
+default = ["bls12", "cuda", "opencl"]
+#default = ["bls12", "opencl"]
 cuda = ["rust-gpu-tools/cuda"]
 opencl = ["rust-gpu-tools/opencl"]
-fft = []
-multiexp = []
+# Generate a kernel for BLS12-381 usage.
+bls12 = []

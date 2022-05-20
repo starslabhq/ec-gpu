@@ -23,19 +23,17 @@ mod program;
 mod source;
 
 /// Fast Fourier Transform on the GPU.
-#[cfg(all(feature = "fft", any(feature = "cuda", feature = "opencl")))]
+#[cfg(any(feature = "cuda", feature = "opencl"))]
 pub mod fft;
 /// Fast Fourier Transform on the CPU.
-#[cfg(feature = "fft")]
 pub mod fft_cpu;
 /// Multiexponentiation on the GPU.
-#[cfg(all(feature = "multiexp", any(feature = "cuda", feature = "opencl")))]
+#[cfg(any(feature = "cuda", feature = "opencl"))]
 pub mod multiexp;
 /// Multiexponentiation on the CPU.
-#[cfg(feature = "multiexp")]
 pub mod multiexp_cpu;
 /// Helpers for multithreaded code.
-#[cfg(any(feature = "fft", feature = "multiexp"))]
+#[cfg(any(feature = "cuda", feature = "opencl"))]
 pub mod threadpool;
 
 /// Re-export rust-gpu-tools as things like [`rust_gpu_tools::Device`] might be needed.
