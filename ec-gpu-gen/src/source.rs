@@ -1,7 +1,10 @@
-use std::fmt::Write;
+use std::collections::HashSet;
+use std::fmt::{self, Write};
+use std::hash::{Hash, Hasher};
+use std::marker::PhantomData;
 use std::mem;
 
-use ec_gpu::{GpuEngine, GpuField};
+use ec_gpu::{GpuField, GpuGroup};
 
 static COMMON_SRC: &str = include_str!("cl/common.cl");
 static FIELD_SRC: &str = include_str!("cl/field.cl");
@@ -10,52 +13,241 @@ static EC_SRC: &str = include_str!("cl/ec.cl");
 static FFT_SRC: &str = include_str!("cl/fft.cl");
 static MULTIEXP_SRC: &str = include_str!("cl/multiexp.cl");
 
-/// Generates the source for FFT and Multiexp operations.
-pub fn gen_source<E: GpuEngine, L: Limb>() -> String {
-    vec![
-        common(),
-        gen_ec_source::<E, L>(),
-        fft("Fr"),
-        multiexp("G1", "Fr"),
-        multiexp("G2", "Fr"),
-    ]
-    .join("\n\n")
+/// This trait is used to uniquely identify items by some identifier (`name`) and to return the GPU
+/// source code they produce.
+trait NameAndSource<L: Limb> {
+    fn name(&self) -> String;
+    fn source(&self) -> String;
 }
 
-/// Generates the source for the elliptic curve and group operations, as defined by `E`.
+impl<L: Limb> PartialEq for dyn NameAndSource<L> {
+    fn eq(&self, other: &Self) -> bool {
+        self.name() == other.name()
+    }
+}
+
+impl<L: Limb> Eq for dyn NameAndSource<L> {}
+
+impl<L: Limb> Hash for dyn NameAndSource<L> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name().hash(state)
+    }
+}
+
+impl<L: Limb> fmt::Debug for dyn NameAndSource<L> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if f.alternate() {
+            f.debug_map()
+                .entries(vec![("name", self.name()), ("source", self.source())])
+                .finish()
+        } else {
+            write!(f, "{:?}", self.name())
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Field<F: GpuField> {
+    name: String,
+    /// The name of the extension field if there is one.
+    extension: Option<String>,
+    _phantom_f: PhantomData<F>,
+}
+
+impl<F: GpuField> Clone for Field<F> {
+    fn clone(&self) -> Self {
+        Self {
+            name: self.name.clone(),
+            extension: self.extension.clone(),
+            _phantom_f: PhantomData,
+        }
+    }
+}
+
+impl<F: GpuField> Field<F> {
+    pub fn new(name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            extension: None,
+            _phantom_f: PhantomData,
+        }
+    }
+
+    pub fn quadric_extension(subfield_name: &str, extension_name: &str) -> Self {
+        Self {
+            name: subfield_name.to_string(),
+            extension: Some(extension_name.to_string()),
+            _phantom_f: PhantomData,
+        }
+    }
+}
+
+impl<F: GpuField, L: Limb> NameAndSource<L> for Field<F> {
+    fn name(&self) -> String {
+        // If it is an extension field, the extension field's identifier is used as name.
+        self.extension.as_ref().unwrap_or(&self.name).clone()
+    }
+
+    fn source(&self) -> String {
+        match &self.extension {
+            Some(extension_field_name) => String::from(FIELD2_SRC)
+                .replace("FIELD2", &extension_field_name)
+                .replace("FIELD", &self.name),
+            None => [
+                params::<F, L>(),
+                field_add_sub_nvidia::<F, L>().expect("preallocated"),
+                String::from(FIELD_SRC),
+            ]
+            .join("\n")
+            .replace("FIELD", &self.name),
+        }
+    }
+}
+
+struct Fft<F: GpuField> {
+    field: Field<F>,
+}
+
+impl<F: GpuField, L: Limb> NameAndSource<L> for Fft<F> {
+    fn name(&self) -> String {
+        // As the FFT is only based on the field, is the identifier the name of the field.
+        <_ as NameAndSource<L>>::name(&self.field)
+    }
+
+    fn source(&self) -> String {
+        String::from(FFT_SRC).replace("FIELD", &<_ as NameAndSource<L>>::name(&self.field))
+    }
+}
+
+struct Multiexp<F: GpuField, Exp: GpuField> {
+    /// Base field to use, may also be an extension field.
+    field: Field<F>,
+    /// The scalar field that is used for the exponent.
+    exponent: Field<Exp>,
+}
+
+impl<F: GpuField, Exp: GpuField, L: Limb> NameAndSource<L> for Multiexp<F, Exp> {
+    fn name(&self) -> String {
+        // Multiexp depends on the base as well as the scalar field, hence use both as identifier.
+        // Use the name of the extension field if there is one.
+        let field_name = self.field.extension.as_ref().unwrap_or(&self.field.name);
+        format!("{}_{}", field_name, self.exponent.name)
+    }
+
+    fn source(&self) -> String {
+        let ec = String::from(EC_SRC).replace("FIELD", &<_ as NameAndSource<L>>::name(&self.field));
+        let multiexp = String::from(MULTIEXP_SRC)
+            .replace("FIELD", &<_ as NameAndSource<L>>::name(&self.field))
+            .replace("EXPONENT", &<_ as NameAndSource<L>>::name(&self.exponent));
+        [ec, multiexp].concat()
+    }
+}
+
+pub struct Config<L: Limb> {
+    // The concrete types cannot be used, as each item of the set should be able to have its own
+    // (different) generic type.
+    /// The [`Field`]s that are used in this kernel.
+    fields: HashSet<Box<dyn NameAndSource<L>>>,
+    /// The extension-[`Fft`]s that are used in this kernel.
+    ffts: HashSet<Box<dyn NameAndSource<L>>>,
+    /// The [`Multiexp`]s that are used in this kernel.
+    multiexps: HashSet<Box<dyn NameAndSource<L>>>,
+}
+
+impl<L: Limb> Config<L> {
+    pub fn new() -> Self {
+        Self {
+            fields: HashSet::new(),
+            ffts: HashSet::new(),
+            multiexps: HashSet::new(),
+        }
+    }
+
+    /// Add a field to the configuration.
+    ///
+    /// If it is an extension field, then the extension field *and* the subfield is added.
+    // TODO vmx 2022-05-17: Learn what `'static` actually does here.
+    pub fn add_field<F>(mut self, field: Field<F>) -> Self
+    where
+        F: GpuField + 'static
+    {
+        if field.extension.is_some() {
+            // Also add the subfield (without the extension field).
+            let mut subfield = field.clone();
+            subfield.extension = None;
+            self.fields.insert(Box::new(subfield));
+        }
+        self.fields.insert(Box::new(field));
+        self
+    }
+
+    // TODO vmx 2022-05-17: Learn what `'static` actually does here.
+    pub fn add_fft<F>(self, field: Field<F>) -> Self
+    where
+        F: GpuField + 'static
+    {
+        //self.fields.insert(Box::new(field.clone()));
+        let mut config = self.add_field(field.clone());
+        let fft = Fft { field };
+        config.ffts.insert(Box::new(fft));
+        config
+    }
+
+    // TODO vmx 2022-05-17: Learn what `'static` actually does here.
+    pub fn add_multiexp<F, Exp>(self, field: Field<F>, exponent: Field<Exp>) -> Self
+    where
+        F: GpuField + 'static,
+        Exp: GpuField + 'static,
+    {
+        let mut config = self.add_field(field.clone());
+        let multiexp = Multiexp { field, exponent };
+        config.multiexps.insert(Box::new(multiexp));
+        config
+    }
+
+    pub fn gen_source(&self) -> String {
+        println!("vmx: gen_source: fields: {:?}", self.fields);
+        let fields = self.fields.iter().map(|field| field.source()).collect();
+        let ffts = self.ffts.iter().map(|fft| fft.source()).collect();
+        let multiexps = self
+            .multiexps
+            .iter()
+            .map(|multiexp| multiexp.source())
+            .collect();
+        vec![common(), fields, ffts, multiexps].join("\n\n")
+    }
+}
+
+/// The configuration to create a kernel for BLS12-381.
 ///
-/// The code from the [`common()`] call needs to be included before this on is used.
-pub fn gen_ec_source<E: GpuEngine, L: Limb>() -> String {
-    vec![
-        field::<E::Scalar, L>("Fr"),
-        field::<E::Fp, L>("Fq"),
-        field2("Fq2", "Fq"),
-        ec("Fq", "G1"),
-        ec("Fq2", "G2"),
-    ]
-    .join("\n\n")
-}
-
-fn ec(field: &str, point: &str) -> String {
-    String::from(EC_SRC)
-        .replace("FIELD", field)
-        .replace("POINT", point)
-}
-
-fn field2(field2: &str, field: &str) -> String {
-    String::from(FIELD2_SRC)
-        .replace("FIELD2", field2)
-        .replace("FIELD", field)
-}
-
-fn fft(field: &str) -> String {
-    String::from(FFT_SRC).replace("FIELD", field)
-}
-
-fn multiexp(point: &str, exp: &str) -> String {
-    String::from(MULTIEXP_SRC)
-        .replace("POINT", point)
-        .replace("EXPONENT", exp)
+/// It also contains FFT and Multiexp functionality.
+//pub fn bls12_config<F, S, L>() -> Config<L>
+//where
+//    // Base field
+//    F: GpuField + 'static,
+//    // Scalar field
+//    S: GpuField + 'static,
+//    L: Limb,
+pub fn bls12_config<F, S, L>() -> Config<L>
+where
+    // Base field
+    F: GpuField + 'static,
+    // Scalar field
+    S: GpuField + 'static,
+    L: Limb,
+{
+   Config::new()
+       .add_fft(Field::<S>::new("Fr"))
+       // G1
+       .add_multiexp(
+           Field::<F>::new("Fq"),
+           Field::<S>::new("Fr"),
+       )
+       // G2
+       .add_multiexp(
+           Field::<F>::quadric_extension("Fq", "Fq2"),
+           Field::<S>::new("Fr"),
+       )
 }
 
 /// Trait to implement limbs of different underlying bit sizes.
@@ -288,22 +480,22 @@ where
     Ok(result)
 }
 
-/// Returns CUDA/OpenCL source-code of a ff::PrimeField with name `name`
-/// Find details in README.md
-///
-/// The code from the [`common()`] call needs to be included before this on is used.
-pub fn field<F, L: Limb>(name: &str) -> String
-where
-    F: GpuField,
-{
-    [
-        params::<F, L>(),
-        field_add_sub_nvidia::<F, L>().expect("preallocated"),
-        String::from(FIELD_SRC),
-    ]
-    .join("\n")
-    .replace("FIELD", name)
-}
+///// Returns CUDA/OpenCL source-code of a ff::PrimeField with name `name`
+///// Find details in README.md
+/////
+///// The code from the [`common()`] call needs to be included before this on is used.
+//pub fn field<F, L: Limb>(name: &str) -> String
+//where
+//    F: GpuField,
+//{
+//    [
+//        params::<F, L>(),
+//        field_add_sub_nvidia::<F, L>().expect("preallocated"),
+//        String::from(FIELD_SRC),
+//    ]
+//    .join("\n")
+//    .replace("FIELD", name)
+//}
 
 /// Returns CUDA/OpenCL source-code that contains definitions/functions that are shared across
 /// fields.

@@ -4,9 +4,17 @@
 /// - `Fp2`
 /// - `G1`
 /// - `G2`
-pub trait GpuEngine {
-    type Scalar: GpuField;
+//pub trait GpuEngine {
+//    type Scalar: GpuField;
+//    type Fp: GpuField;
+//}
+
+/// Describes how to generate elliptic curve operations for a group.
+pub trait GpuGroup {
+    /// The base field.
     type Fp: GpuField;
+    /// The scalar field.
+    type Scalar: GpuField;
 }
 
 /// Describes how to generate the gpu sources for a Field.

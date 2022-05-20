@@ -1,10 +1,28 @@
 use std::path::PathBuf;
 use std::{env, fs};
 
-use blstrs::Bls12;
 
 #[path = "src/source.rs"]
 mod source;
+
+use source::{Config, Field, Limb, Limb32, Limb64};
+
+fn bls12_config<L: Limb>() -> Config<L> {
+    use blstrs::{Fp, Scalar};
+
+  Config::new()
+      .add_fft(Field::<Scalar>::new("Fr"))
+      // G1
+      .add_multiexp(
+          Field::<Fp>::new("Fq"),
+          Field::<Scalar>::new("Fr"),
+      )
+      // G2
+      .add_multiexp(
+          Field::<Fp>::quadric_extension("Fq", "Fq2"),
+          Field::<Scalar>::new("Fr"),
+      )
+}
 
 /// The build script is use to generate the CUDA kernel and OpenCL source at compile-time, if the
 /// if the `fft` and/or the `multiexp` features are enabled.
@@ -30,7 +48,7 @@ fn generate_cuda() {
         return;
     }
 
-    let kernel_source = source::gen_source::<Bls12, source::Limb32>();
+    let kernel_source = bls12_config::<Limb32>().gen_source();
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR was not set.");
 
     // Make it possible to override the default options. Though the source and output file is
@@ -45,9 +63,9 @@ fn generate_cuda() {
                 .arg("--threads=0")
                 .arg("--fatbin")
                 .arg("--gpu-architecture=sm_86")
-                .arg("--generate-code=arch=compute_86,code=sm_86")
-                .arg("--generate-code=arch=compute_80,code=sm_80")
-                .arg("--generate-code=arch=compute_75,code=sm_75");
+                .arg("--generate-code=arch=compute_86,code=sm_86");
+                //.arg("--generate-code=arch=compute_80,code=sm_80")
+                //.arg("--generate-code=arch=compute_75,code=sm_75");
             command
         }
     };
@@ -100,7 +118,7 @@ fn generate_cuda() {
 
 #[cfg(feature = "opencl")]
 fn generate_opencl() {
-    let kernel_source = source::gen_source::<Bls12, source::Limb64>();
+    let kernel_source = bls12_config::<Limb64>().gen_source();
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR was not set.");
 
     // Generating the kernel source is cheap, hence use a fixed name and override it on every

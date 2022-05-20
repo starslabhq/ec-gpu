@@ -1,4 +1,3 @@
-use std::any::TypeId;
 use std::ops::AddAssign;
 use std::sync::{Arc, RwLock};
 
@@ -33,9 +32,9 @@ fn get_cuda_cores_count(name: &str) -> usize {
 }
 
 /// Multiexp kernel for a single GPU.
-pub struct SingleMultiexpKernel<'a, E>
+pub struct SingleMultiexpKernel<'a, G>
 where
-    E: Engine,
+    G: PrimeCurveAffine,
 {
     program: Program,
     core_count: usize,
@@ -45,7 +44,7 @@ where
     /// [`EcError::Aborted`].
     maybe_abort: Option<&'a (dyn Fn() -> bool + Send + Sync)>,
 
-    _phantom: std::marker::PhantomData<E::Fr>,
+    _phantom: std::marker::PhantomData<G::Scalar>,
 }
 
 fn calc_num_groups(core_count: usize, num_windows: usize) -> usize {
@@ -83,25 +82,25 @@ fn calc_best_chunk_size(max_window_size: usize, core_count: usize, exp_bits: usi
         .ceil() as usize
 }
 
-fn calc_chunk_size<E>(mem: u64, core_count: usize) -> usize
-where
-    E: Engine,
-{
-    let aff_size = std::mem::size_of::<E::G1Affine>() + std::mem::size_of::<E::G2Affine>();
-    let exp_size = exp_size::<E>();
-    let proj_size = std::mem::size_of::<E::G1>() + std::mem::size_of::<E::G2>();
-    ((((mem as f64) * (1f64 - MEMORY_PADDING)) as usize)
-        - (2 * core_count * ((1 << MAX_WINDOW_SIZE) + 1) * proj_size))
-        / (aff_size + exp_size)
+//fn calc_chunk_size<E>(mem: u64, core_count: usize) -> usize
+//where
+//    E: Engine,
+//{
+//    let aff_size = std::mem::size_of::<E::G1Affine>() + std::mem::size_of::<E::G2Affine>();
+//    let exp_size = exp_size::<E>();
+//    let proj_size = std::mem::size_of::<E::G1>() + std::mem::size_of::<E::G2>();
+//    ((((mem as f64) * (1f64 - MEMORY_PADDING)) as usize)
+//        - (2 * core_count * ((1 << MAX_WINDOW_SIZE) + 1) * proj_size))
+//        / (aff_size + exp_size)
+//}
+
+fn exp_size<G: PrimeCurveAffine>() -> usize {
+    std::mem::size_of::<<G::Scalar as PrimeField>::Repr>()
 }
 
-fn exp_size<E: Engine>() -> usize {
-    std::mem::size_of::<<E::Fr as ff::PrimeField>::Repr>()
-}
-
-impl<'a, E> SingleMultiexpKernel<'a, E>
+impl<'a, G> SingleMultiexpKernel<'a, G>
 where
-    E: Engine,
+    G: PrimeCurveAffine,
 {
     /// Create a new kernel for a device.
     ///
@@ -111,10 +110,13 @@ where
         device: &Device,
         maybe_abort: Option<&'a (dyn Fn() -> bool + Send + Sync)>,
     ) -> EcResult<Self> {
-        let exp_bits = exp_size::<E>() * 8;
+        let exp_bits = exp_size::<G>() * 8;
         let core_count = get_cuda_cores_count(&device.name());
         let mem = device.memory();
-        let max_n = calc_chunk_size::<E>(mem, core_count);
+        // TODO vmx 2022-05-16: Calculate it again, this is just a hack to make it compile during
+        // the refactoring.
+        //let max_n = calc_chunk_size::<E>(mem, core_count);
+        let max_n = 1000;
         let best_n = calc_best_chunk_size(MAX_WINDOW_SIZE, core_count, exp_bits);
         let n = std::cmp::min(max_n, best_n);
 
@@ -130,22 +132,19 @@ where
     }
 
     /// Run the actual multiexp computation on the GPU.
-    pub fn multiexp<G>(
+    pub fn multiexp(
         &self,
         bases: &[G],
         exps: &[<G::Scalar as PrimeField>::Repr],
         n: usize,
-    ) -> EcResult<<G as PrimeCurveAffine>::Curve>
-    where
-        G: PrimeCurveAffine,
-    {
+    ) -> EcResult<G::Curve> {
         if let Some(maybe_abort) = &self.maybe_abort {
             if maybe_abort() {
                 return Err(EcError::Aborted);
             }
         }
 
-        let exp_bits = exp_size::<E>() * 8;
+        let exp_bits = exp_size::<G>() * 8;
         let window_size = calc_window_size(n as usize, exp_bits, self.core_count);
         let num_windows = ((exp_bits as f64) / (window_size as f64)).ceil() as usize;
         let num_groups = calc_num_groups(self.core_count, num_windows);
@@ -155,63 +154,51 @@ where
         // be `num_groups` * `num_windows` threads in total.
         // Each thread will use `num_groups` * `num_windows` * `bucket_len` buckets.
 
-        let closures = program_closures!(
-            |program, _arg| -> EcResult<Vec<<G as PrimeCurveAffine>::Curve>> {
-                let base_buffer = program.create_buffer_from_slice(bases)?;
-                let exp_buffer = program.create_buffer_from_slice(exps)?;
+        let closures = program_closures!(|program, _arg| -> EcResult<Vec<G::Curve>> {
+            let base_buffer = program.create_buffer_from_slice(bases)?;
+            let exp_buffer = program.create_buffer_from_slice(exps)?;
 
-                // It is safe as the GPU will initialize that buffer
-                let bucket_buffer = unsafe {
-                    program.create_buffer::<<G as PrimeCurveAffine>::Curve>(
-                        2 * self.core_count * bucket_len,
-                    )?
-                };
-                // It is safe as the GPU will initialize that buffer
-                let result_buffer = unsafe {
-                    program.create_buffer::<<G as PrimeCurveAffine>::Curve>(2 * self.core_count)?
-                };
+            // It is safe as the GPU will initialize that buffer
+            let bucket_buffer =
+                unsafe { program.create_buffer::<G::Curve>(2 * self.core_count * bucket_len)? };
+            // It is safe as the GPU will initialize that buffer
+            let result_buffer = unsafe { program.create_buffer::<G::Curve>(2 * self.core_count)? };
 
-                // The global work size follows CUDA's definition and is the number of
-                // `LOCAL_WORK_SIZE` sized thread groups.
-                let global_work_size =
-                    (num_windows * num_groups + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE;
+            // The global work size follows CUDA's definition and is the number of
+            // `LOCAL_WORK_SIZE` sized thread groups.
+            let global_work_size =
+                (num_windows * num_groups + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE;
 
-                let kernel = program.create_kernel(
-                    if TypeId::of::<G>() == TypeId::of::<E::G1Affine>() {
-                        "G1_bellman_multiexp"
-                    } else if TypeId::of::<G>() == TypeId::of::<E::G2Affine>() {
-                        "G2_bellman_multiexp"
-                    } else {
-                        return Err(EcError::Simple("Only E::G1 and E::G2 are supported!"));
-                    },
-                    global_work_size,
-                    LOCAL_WORK_SIZE,
-                )?;
+            // TODO vmx 2022-05-16: This name depends on the point name, make sure we supply it
+            // somehow. Rethink again whether it makes sense to specify a point here or whether
+            // it should soleily based on the field. though then we would also need to supply a
+            // field name somehow, which probably doesn't make much different (whether
+            // supplying a point name or a field name).
+            let kernel =
+                program.create_kernel("bellman_multiexp", global_work_size, LOCAL_WORK_SIZE)?;
 
-                kernel
-                    .arg(&base_buffer)
-                    .arg(&bucket_buffer)
-                    .arg(&result_buffer)
-                    .arg(&exp_buffer)
-                    .arg(&(n as u32))
-                    .arg(&(num_groups as u32))
-                    .arg(&(num_windows as u32))
-                    .arg(&(window_size as u32))
-                    .run()?;
+            kernel
+                .arg(&base_buffer)
+                .arg(&bucket_buffer)
+                .arg(&result_buffer)
+                .arg(&exp_buffer)
+                .arg(&(n as u32))
+                .arg(&(num_groups as u32))
+                .arg(&(num_windows as u32))
+                .arg(&(window_size as u32))
+                .run()?;
 
-                let mut results =
-                    vec![<G as PrimeCurveAffine>::Curve::identity(); 2 * self.core_count];
-                program.read_into_buffer(&result_buffer, &mut results)?;
+            let mut results = vec![G::Curve::identity(); 2 * self.core_count];
+            program.read_into_buffer(&result_buffer, &mut results)?;
 
-                Ok(results)
-            }
-        );
+            Ok(results)
+        });
 
         let results = self.program.run(closures, ())?;
 
         // Using the algorithm below, we can calculate the final result by accumulating the results
         // of those `NUM_GROUPS` * `NUM_WINDOWS` threads.
-        let mut acc = <G as PrimeCurveAffine>::Curve::identity();
+        let mut acc = G::Curve::identity();
         let mut bits = 0;
         for i in 0..num_windows {
             let w = std::cmp::min(window_size, exp_bits - bits);
@@ -229,16 +216,16 @@ where
 }
 
 /// A struct that containts several multiexp kernels for different devices.
-pub struct MultiexpKernel<'a, E>
+pub struct MultiexpKernel<'a, G>
 where
-    E: Engine,
+    G: PrimeCurveAffine,
 {
-    kernels: Vec<SingleMultiexpKernel<'a, E>>,
+    kernels: Vec<SingleMultiexpKernel<'a, G>>,
 }
 
-impl<'a, E> MultiexpKernel<'a, E>
+impl<'a, G> MultiexpKernel<'a, G>
 where
-    E: Engine,
+    G: PrimeCurveAffine,
 {
     /// Create new kernels, one for each given device.
     pub fn create(devices: &[&Device]) -> EcResult<Self> {
@@ -263,7 +250,7 @@ where
         let kernels: Vec<_> = devices
             .iter()
             .filter_map(|device| {
-                let kernel = SingleMultiexpKernel::<E>::create(device, maybe_abort);
+                let kernel = SingleMultiexpKernel::create(device, maybe_abort);
                 if let Err(ref e) = kernel {
                     error!(
                         "Cannot initialize kernel for device '{}'! Error: {}",
@@ -287,23 +274,21 @@ where
                 k.n
             );
         }
-        Ok(MultiexpKernel::<E> { kernels })
+        Ok(MultiexpKernel { kernels })
     }
 
     /// Calculate multiexp on all available GPUs.
     ///
     /// It needs to run within a [`yastl::Scope`]. This method usually isn't called directly, use
     /// [`MultiexpKernel::multiexp`] instead.
-    pub fn parallel_multiexp<'s, G>(
+    pub fn parallel_multiexp<'s>(
         &'s mut self,
         scope: &Scope<'s>,
         bases: &'s [G],
         exps: &'s [<G::Scalar as PrimeField>::Repr],
-        results: &'s mut [<G as PrimeCurveAffine>::Curve],
+        results: &'s mut [G::Curve],
         error: Arc<RwLock<EcResult<()>>>,
-    ) where
-        G: PrimeCurveAffine<Scalar = E::Fr>,
-    {
+    ) {
         let num_devices = self.kernels.len();
         let num_exps = exps.len();
         let chunk_size = ((num_exps as f64) / (num_devices as f64)).ceil() as usize;
@@ -319,7 +304,7 @@ where
         {
             let error = error.clone();
             scope.execute(move || {
-                let mut acc = <G as PrimeCurveAffine>::Curve::identity();
+                let mut acc = G::Curve::identity();
                 for (bases, exps) in bases.chunks(kern.n).zip(exps.chunks(kern.n)) {
                     if error.read().unwrap().is_err() {
                         break;
@@ -342,16 +327,13 @@ where
     /// Calculate multiexp.
     ///
     /// This is the main entry point.
-    pub fn multiexp<G>(
+    pub fn multiexp(
         &mut self,
         pool: &Worker,
         bases_arc: Arc<Vec<G>>,
         exps: Arc<Vec<<G::Scalar as PrimeField>::Repr>>,
         skip: usize,
-    ) -> EcResult<<G as PrimeCurveAffine>::Curve>
-    where
-        G: PrimeCurveAffine<Scalar = E::Fr>,
-    {
+    ) -> EcResult<G::Curve> {
         // Bases are skipped by `self.1` elements, when converted from (Arc<Vec<G>>, usize) to Source
         // https://github.com/zkcrypto/bellman/blob/10c5010fd9c2ca69442dc9775ea271e286e776d8/src/multiexp.rs#L38
         let bases = &bases_arc[skip..(skip + exps.len())];
@@ -361,7 +343,7 @@ where
         let error = Arc::new(RwLock::new(Ok(())));
 
         pool.scoped(|s| {
-            results = vec![<G as PrimeCurveAffine>::Curve::identity(); self.kernels.len()];
+            results = vec![G::Curve::identity(); self.kernels.len()];
             self.parallel_multiexp(s, bases, exps, &mut results, error.clone());
         });
 
@@ -370,7 +352,7 @@ where
             .into_inner()
             .unwrap()?;
 
-        let mut acc = <G as PrimeCurveAffine>::Curve::identity();
+        let mut acc = G::Curve::identity();
         for r in results {
             acc.add_assign(&r);
         }
@@ -402,7 +384,7 @@ mod tests {
         density_map: D,
         exponents: Arc<Vec<<G::Scalar as PrimeField>::Repr>>,
         kern: &mut MultiexpKernel<E>,
-    ) -> Result<<G as PrimeCurveAffine>::Curve, EcError>
+    ) -> Result<G::Curve, EcError>
     where
         for<'a> &'a Q: QueryDensity,
         D: Send + Sync + 'static + Clone + AsRef<Q>,
