@@ -10,16 +10,16 @@ use source::{Limb32, Limb64};
 
 #[cfg(feature = "bls12")]
 fn bls12_config<L: Limb>() -> Config<L> {
-    use blstrs::{Fp, Scalar};
+    use blstrs::{Fp, Fp2, Scalar};
 
     Config::new()
-        .add_fft(Field::<Scalar>::new("Fr"))
+        .add_fft(Field::<Scalar>::new())
         // G1
-        .add_multiexp(Field::<Fp>::new("Fq"), Field::<Scalar>::new("Fr"))
+        .add_multiexp(Field::<Fp>::new(), Field::<Scalar>::new())
         // G2
         .add_multiexp(
-            Field::<Fp>::quadratic_extension("Fq", "Fq2"),
-            Field::<Scalar>::new("Fr"),
+            Field::<Fp, Fp2>::quadratic_extension(),
+            Field::<Scalar>::new(),
         )
 }
 
