@@ -1,5 +1,4 @@
-use std::cmp::Ordering;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::HashSet;
 use std::fmt::{self, Write};
 use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
@@ -17,13 +16,15 @@ static MULTIEXP_SRC: &str = include_str!("cl/multiexp.cl");
 /// This trait is used to uniquely identify items by some identifier (`name`) and to return the GPU
 /// source code they produce.
 trait NameAndSource<L: Limb> {
-    fn name_foo(&self) -> String;
+    /// The name to identify the item.
+    fn name(&self) -> String;
+    /// The GPU source code that is generated.
     fn source(&self) -> String;
 }
 
 impl<L: Limb> PartialEq for dyn NameAndSource<L> {
     fn eq(&self, other: &Self) -> bool {
-        self.name_foo() == other.name_foo()
+        self.name() == other.name()
     }
 }
 
@@ -31,222 +32,152 @@ impl<L: Limb> Eq for dyn NameAndSource<L> {}
 
 impl<L: Limb> Hash for dyn NameAndSource<L> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name_foo().hash(state)
+        self.name().hash(state)
     }
 }
 
+/// Prints the name by default, the source code in the alternate mode via `{:#?}`.
 impl<L: Limb> fmt::Debug for dyn NameAndSource<L> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if f.alternate() {
             f.debug_map()
-                .entries(vec![("name", self.name_foo()), ("source", self.source())])
+                .entries(vec![("name", self.name()), ("source", self.source())])
                 .finish()
         } else {
-            write!(f, "{:?}", self.name_foo())
+            write!(f, "{:?}", self.name())
         }
     }
 }
 
-///// This trait is used to sort extension fields after their sub-fields. This is needed in order to
-///// make sure the declarations in the GPU source code are in the right order.
-//trait ExtensionField {
-//    fn is_extension_field(&self) -> bool;
-//}
-
-///// This trait is there in order to be able to sort extension fields after their sub-fields.
-/////
-///// It would be nicer if we could use `Ord` instead of `ExtensionField`, but that's not possible
-///// due to the `PartialOrd` trait not being object safe.
-//trait FieldNameAndSource<L: Limb>: NameAndSource<L> + ExtensionField {}
-//
-//impl<L: Limb> PartialEq for dyn FieldNameAndSource<L> {
-//    fn eq(&self, other: &Self) -> bool {
-//        self.name_foo() == other.name_foo()
-//    }
-//}
-//
-//impl<L: Limb> Eq for dyn FieldNameAndSource<L> {}
-//
-//impl<L: Limb> PartialOrd for dyn FieldNameAndSource<L> {
-//    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-//        // Extension fields sort after their sub-fields, rest is lexicographical.
-//        match (self.is_extension_field(), other.is_extension_field()) {
-//            (true, false) => Some(Ordering::Greater),
-//            (false, true) => Some(Ordering::Less),
-//            // Both are either extension fields or not.
-//            (_, _) => Some(self.name_foo().cmp(&other.name_foo())),
-//        }
-//    }
-//}
-//
-//impl<L: Limb> Ord for dyn FieldNameAndSource<L> {
-//    fn cmp(&self, other: &Self) -> Ordering {
-//        // It's safe to use `unwrap()` here, as `partial_cmp()` always returns `Some`.
-//        self.partial_cmp(other).unwrap()
-//    }
-//}
-//
-//impl<L: Limb> fmt::Debug for dyn FieldNameAndSource<L> {
-//    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-//        if f.alternate() {
-//            f.debug_map()
-//                .entries(vec![("name", self.name_foo()), ("source", self.source())])
-//                .finish()
-//        } else {
-//            write!(f, "{:?}", self.name_foo())
-//        }
-//    }
-//}
-
-//#[derive(Debug)]
-//pub struct Field<F: GpuField> {
-//    /// The name of the extension field if there is one.
-//    extension: Option<String>,
-//    _phantom_f: PhantomData<F>,
-//}
-
+/// A field that might even be an extension field.
+///
+/// If it is an extension field, it's generic over the sub-field, the extension field is stored
+/// as a string only.
+// Storing the extension field as a string is a bit of a hack around Rust's type system. If we
+// would store the generic type, then the enum would need to be generic over two fields, even in
+// the case when no extension field is used. This would make the API harder to use.
 #[derive(Debug)]
-pub enum Field<F: GpuField, E: GpuField = ()> { 
+pub enum Field<F: GpuField> {
+    // A field.
     Field(PhantomData<F>),
-    ExtensionField(PhantomData<(E, F)>),
-    //Field(F),
-    //ExtensionField(E, F),
+    /// An extension field with the given name.
+    ExtensionField(String),
 }
 
-//impl<F: GpuField> PartialEq for Field<F> {
-//    fn eq(&self, _other: &Self) -> bool {
-//        // A field with the same generic is always equal
-//        true
-//    }
-//}
-//
-impl<F: GpuField, E: GpuField> Clone for Field<F, E> {
-   fn clone(&self) -> Self {
-       match self {
-           Self::Field(_) => Self::Field(PhantomData),
-           Self::ExtensionField(_) => Self::ExtensionField(PhantomData),
-       }
-   }
+impl<F: GpuField> Clone for Field<F> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Field(_) => Self::Field(PhantomData),
+            Self::ExtensionField(name) => Self::ExtensionField(name.to_string()),
+        }
+    }
 }
 
-impl<F: GpuField, E: GpuField> Field<F, E> {
+impl<F: GpuField> Field<F> {
+    /// Create a new field for the given generic type.
     pub fn new() -> Self {
         Self::Field(PhantomData)
     }
 
-    //pub fn quadratic_extension(sub_field: F, extension_field: E) -> Self {
-    //    Self::ExtensionField(extension_field, sub_field)
-    //}
-    pub fn quadratic_extension() -> Self {
-        Self::ExtensionField(PhantomData)
+    /// Create an extension field.
+    ///
+    /// The sub-field is specified by generic on the field, the extension field by the generic on
+    /// this function.
+    pub fn quadratic_extension<E: GpuField>() -> Self {
+        Self::ExtensionField(E::name())
     }
 
+    /// If it is an extension field, the extension field's identifier is used as name.
     pub fn name(&self) -> String {
-        //// If it is an extension field, the extension field's identifier is used as name.
         match self {
             Self::Field(_) => F::name(),
-            Self::ExtensionField(_) => E::name(),
+            Self::ExtensionField(name) => name.to_string(),
         }
     }
 }
 
-impl<F: GpuField, E: GpuField, L: Limb> NameAndSource<L> for Field<F, E> {
-    fn name_foo(&self) -> String {
-        //// If it is an extension field, the extension field's identifier is used as name.
-        //self.extension.as_ref().unwrap_or(&F::name()).clone()
-        //match self {
-        //    Self::Field(_) => F::name(),
-        //    Self::ExtensionField(_, _) => E::name(),
-        //}
+impl<F: GpuField, L: Limb> NameAndSource<L> for Field<F> {
+    fn name(&self) -> String {
         self.name()
     }
 
     fn source(&self) -> String {
         match self {
-            //Self::ExtensionField(extension_field, sub_field) => String::from(FIELD2_SRC)
-            Self::ExtensionField(_) => String::from(FIELD2_SRC)
-                // TODO vmx 2022:05-23: or should `extension_field.name()` be used?
-                .replace("FIELD2", &E::name())
-                .replace("FIELD", &F::name()),
-            Self::Field(field) => [
+            Self::Field(_) => [
                 params::<F, L>(),
                 field_add_sub_nvidia::<F, L>().expect("preallocated"),
                 String::from(FIELD_SRC),
             ]
             .join("\n")
             .replace("FIELD", &F::name()),
+            Self::ExtensionField(name) => String::from(FIELD2_SRC)
+                .replace("FIELD2", name)
+                .replace("FIELD", &F::name()),
         }
     }
 }
 
-//impl<F: GpuField, E: GpuField> ExtensionField for Field<F, E> {
-//   fn is_extension_field(&self) -> bool {
-//       matches!(self, Self::ExtensionField(_, _))
-//       //match self {
-//       //    Self::Field(_) => false,
-//       //    Self::ExtensionField(_) => 
-//       //self.extension.clone()
-//   }
-//}
-
-//impl<F: GpuField, L: Limb> FieldNameAndSource<L> for Field<F> {}
-
-struct Fft<F: GpuField, E: GpuField> {
-    field: Field<F, E>,
+/// Struct that generates FFT GPU source code.
+struct Fft<F: GpuField> {
+    /// The field the FFT operates on.
+    field: Field<F>,
 }
 
-impl<F: GpuField, E: GpuField, L: Limb> NameAndSource<L> for Fft<F, E> {
-    fn name_foo(&self) -> String {
-        // As the FFT is only based on the field, is the identifier the name of the field.
-        //<_ as NameAndSource<L>>::name(&self.field)
-        // TODO vmx 2022-05-23: Match on nornmal and extension field
-        F::name()
+impl<F: GpuField, L: Limb> NameAndSource<L> for Fft<F> {
+    fn name(&self) -> String {
+        self.field.name()
     }
 
     fn source(&self) -> String {
-        //String::from(FFT_SRC).replace("FIELD", &<_ as NameAndSource<L>>::name(&self.field))
-        // TODO vmx 2022-05-23: Match on nornmal and extension field
-        String::from(FFT_SRC).replace("FIELD", &F::name())
+        String::from(FFT_SRC).replace("FIELD", &self.field.name())
     }
 }
 
-struct Multiexp<F: GpuField, E: GpuField, Exp: GpuField, Exp_E: GpuField> {
+/// Struct that generates multiexp GPU source code.
+struct Multiexp<F: GpuField, Exp: GpuField> {
     /// Base field to use, may also be an extension field.
-    field: Field<F, E>,
+    field: Field<F>,
     /// The scalar field that is used for the exponent.
-    exponent: Field<Exp, Exp_E>,
+    exponent: Field<Exp>,
 }
 
-impl<F: GpuField, E: GpuField, Exp: GpuField, Exp_E: GpuField, L: Limb> NameAndSource<L> for Multiexp<F, E, Exp, Exp_E> {
-    fn name_foo(&self) -> String {
-        //// Multiexp depends on the base as well as the scalar field, hence use both as identifier.
-        //// Use the name of the extension field if there is one.
-        //let field_name = self.field.extension.clone().take().unwrap_or(F::name());
-        //format!("{}_{}", field_name, Exp::name())
-        // Multiexp depends on the base as well as the scalar field, hence use both as identifier.
+impl<F: GpuField, Exp: GpuField, L: Limb> NameAndSource<L> for Multiexp<F, Exp> {
+    /// Multiexp depends on the base as well as the scalar field, hence use both as identifier.
+    fn name(&self) -> String {
         format!("{}_{}", self.field.name(), self.exponent.name())
     }
 
     fn source(&self) -> String {
-        //let ec = String::from(EC_SRC).replace("FIELD", &<_ as NameAndSource<L>>::name(&self.field));
-        //let multiexp = String::from(MULTIEXP_SRC)
-        //    .replace("FIELD", &<_ as NameAndSource<L>>::name(&self.field))
-        //    .replace("EXPONENT", &<_ as NameAndSource<L>>::name(&self.exponent));
-        // TODO vmx 2022-05-23: match properly on extension field.
-        let ec = String::from(EC_SRC).replace("FIELD", &F::name());
+        let ec = String::from(EC_SRC).replace("FIELD", &self.field.name());
         let multiexp = String::from(MULTIEXP_SRC)
-            .replace("FIELD", &F::name())
-            .replace("EXPONENT", &Exp::name());
+            .replace("FIELD", &self.field.name())
+            .replace("EXPONENT", &self.exponent.name());
         [ec, multiexp].concat()
     }
 }
 
+/// Configuration to create the source code of a GPU kernel.
+///
+/// # Example
+///
+/// ```
+/// use blstrs::{Fp, Fp2, Scalar};
+///
+/// let source = Config::new()
+///     .add_fft(Field::<Scalar>::new())
+///     // G1
+///     .add_multiexp(Field::<Fp>::new(), Field::<Scalar>::new())
+///     // G2
+///     .add_multiexp(
+///         Field::<Fp>::quadratic_extension::<Fp2>(),
+///         Field::<Scalar>::new(),
+///     )
+///     .gen_source();
+///```
+// In the `HashSet`s the concrete types cannot be used, as each item of the set should be able to
+// have its own (different) generic type.
 pub struct Config<L: Limb> {
-    // The concrete types cannot be used, as each item of the set should be able to have its own
-    // (different) generic type.
     /// The [`Field`]s that are used in this kernel.
-    //fields: BTreeSet<Box<dyn FieldNameAndSource<L>>>,
-    //fields: BTreeSet<Box<dyn OrderedNameAndSource<L>>>,
     fields: HashSet<Box<dyn NameAndSource<L>>>,
     /// The extension [`Field`]s that are used in this kernel.
     extension_fields: HashSet<Box<dyn NameAndSource<L>>>,
@@ -269,36 +200,28 @@ impl<L: Limb> Config<L> {
     /// Add a field to the configuration.
     ///
     /// If it is an extension field, then the extension field *and* the sub-field is added.
-    pub fn add_field<F, E>(mut self, field: Field<F, E>) -> Self
+    pub fn add_field<F>(mut self, field: Field<F>) -> Self
     where
         F: GpuField + 'static,
-        E: GpuField + 'static,
     {
-        //if field.extension.is_some() {
-        //    // Also add the sub-field (without the extension field).
-        //    let mut subfield = field.clone();
-        //    subfield.extension = None;
-        //    self.fields.insert(Box::new(subfield));
-        //}
         match field {
             Field::Field(_) => {
                 self.fields.insert(Box::new(field));
-            },
+            }
             Field::ExtensionField(_) => {
                 self.extension_fields.insert(Box::new(field));
                 // Also add the sub-field.
-                let sub_field = Field::<F, E>::new();
+                let sub_field = Field::<F>::new();
                 self.fields.insert(Box::new(sub_field));
-            },
+            }
         }
         self
     }
 
     /// Add an FFT kernel function to the configuration.
-    pub fn add_fft<F, E>(self, field: Field<F, E>) -> Self
+    pub fn add_fft<F>(self, field: Field<F>) -> Self
     where
         F: GpuField + 'static,
-        E: GpuField + 'static,
     {
         let mut config = self.add_field(field.clone());
         let fft = Fft { field };
@@ -307,12 +230,10 @@ impl<L: Limb> Config<L> {
     }
 
     /// Add an Multiexp kernel function to the configuration.
-    pub fn add_multiexp<F, E, Exp, Exp_E>(self, field: Field<F, E>, exponent: Field<Exp, Exp_E>) -> Self
+    pub fn add_multiexp<F, Exp>(self, field: Field<F>, exponent: Field<Exp>) -> Self
     where
         F: GpuField + 'static,
-        E: GpuField + 'static,
         Exp: GpuField + 'static,
-        Exp_E: GpuField + 'static,
     {
         let mut config = self.add_field(field.clone());
         let multiexp = Multiexp { field, exponent };
@@ -323,14 +244,25 @@ impl<L: Limb> Config<L> {
     /// Generate the GPU kernel source code based on the current configuration.
     pub fn gen_source(&self) -> String {
         let fields = self.fields.iter().map(|field| field.source()).collect();
-        let extension_fields = self.extension_fields.iter().map(|field| field.source()).collect();
+        let extension_fields = self
+            .extension_fields
+            .iter()
+            .map(|field| field.source())
+            .collect();
         let ffts = self.ffts.iter().map(|fft| fft.source()).collect();
         let multiexps = self
             .multiexps
             .iter()
             .map(|multiexp| multiexp.source())
             .collect();
-        vec![COMMON_SRC.to_string(), fields, extension_fields, ffts, multiexps].join("\n\n")
+        vec![
+            COMMON_SRC.to_string(),
+            fields,
+            extension_fields,
+            ffts,
+            multiexps,
+        ]
+        .join("\n\n")
     }
 }
 
@@ -562,15 +494,6 @@ where
     writeln!(result, "#endif")?;
 
     Ok(result)
-}
-
-/// Returns CUDA/OpenCL source-code that contains definitions/functions that are shared across
-/// fields.
-///
-/// It needs to be called before any other function like [`field`] or [`gen_ec_source`] is called,
-/// as it contains deinitions, used in those.
-pub fn common() -> String {
-    COMMON_SRC.to_string()
 }
 
 #[cfg(all(test, any(feature = "opencl", feature = "cuda")))]

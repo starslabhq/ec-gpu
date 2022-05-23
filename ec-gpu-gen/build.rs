@@ -18,7 +18,7 @@ fn bls12_config<L: Limb>() -> Config<L> {
         .add_multiexp(Field::<Fp>::new(), Field::<Scalar>::new())
         // G2
         .add_multiexp(
-            Field::<Fp, Fp2>::quadratic_extension(),
+            Field::<Fp>::quadratic_extension::<Fp2>(),
             Field::<Scalar>::new(),
         )
 }

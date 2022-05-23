@@ -37,24 +37,24 @@ pub trait GpuField {
     fn modulus() -> Vec<u32>;
 }
 
-/// This is just a hack, nothing to see here.
-///
-/// This is used so that the second generic parameter of a field which is not an extension field
-/// can be ommitted.
-impl GpuField for () {
-   fn name() -> String {
-       "DO NOT USE THIS, IT IS JUST THERE TO MAKE THE GPUFIELD USAGE NICER.".to_string()
-   }
-
-   fn one() -> Vec<u32> {
-       Vec::new()
-   }
-
-   fn r2() -> Vec<u32> {
-       Vec::new()
-   }
-
-   fn modulus() -> Vec<u32> {
-       Vec::new()
-   }
-}
+///// This is just a hack, nothing to see here.
+/////
+///// This is used so that the second generic parameter of a field which is not an extension field
+///// can be ommitted.
+//impl GpuField for () {
+//   fn name() -> String {
+//       "DO NOT USE THIS, IT IS JUST THERE TO MAKE THE GPUFIELD USAGE NICER.".to_string()
+//   }
+//
+//   fn one() -> Vec<u32> {
+//       Vec::new()
+//   }
+//
+//   fn r2() -> Vec<u32> {
+//       Vec::new()
+//   }
+//
+//   fn modulus() -> Vec<u32> {
+//       Vec::new()
+//   }
+//}
