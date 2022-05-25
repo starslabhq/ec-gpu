@@ -321,6 +321,7 @@ where
         let num_devices = self.kernels.len();
         let num_exps = exps.len();
         let chunk_size = ((num_exps as f64) / (num_devices as f64)).ceil() as usize;
+        debug!("vmx: multiexp: total number of exps2({:?}): {}", std::any::type_name::<G>(), num_exps);
 
         for (((bases, exps), kern), result) in bases
             .chunks(chunk_size)
