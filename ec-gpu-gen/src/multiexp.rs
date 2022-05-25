@@ -370,6 +370,7 @@ where
         // https://github.com/zkcrypto/bellman/blob/10c5010fd9c2ca69442dc9775ea271e286e776d8/src/multiexp.rs#L38
         let bases = &bases_arc[skip..(skip + exps.len())];
         let exps = &exps[..];
+        debug!("vmx: multiexp: total number of based and exps ({}): {} {}", std::any::type_name::<G>(), &bases_arc.len(), &exps.len());
 
         let mut results = Vec::new();
         let error = Arc::new(RwLock::new(Ok(())));
