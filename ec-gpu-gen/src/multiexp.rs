@@ -5,7 +5,7 @@ use std::sync::{Arc, RwLock};
 use ec_gpu::GpuEngine;
 use ff::PrimeField;
 use group::{prime::PrimeCurveAffine, Group};
-use log::{error, info, warn};
+use log::{error, info, warn, debug};
 use pairing::Engine;
 use rust_gpu_tools::{program_closures, Device, Program, Vendor, CUDA_CORES};
 use yastl::Scope;
@@ -90,8 +90,11 @@ where
     E: Engine,
 {
     let aff_size = std::mem::size_of::<E::G1Affine>() + std::mem::size_of::<E::G2Affine>();
+    debug!("vmx: multiexp: calc_chunk_size: aff_size: {}", aff_size);
     let exp_size = exp_size::<E>();
+    debug!("vmx: multiexp: calc_chunk_size: exp_size: {}", exp_size);
     let proj_size = std::mem::size_of::<E::G1>() + std::mem::size_of::<E::G2>();
+    debug!("vmx: multiexp: calc_chunk_size: proj_size: {}", proj_size);
     ((((mem as f64) * (1f64 - MEMORY_PADDING)) as usize)
         - (2 * core_count * ((1 << MAX_WINDOW_SIZE) + 1) * proj_size))
         / (aff_size + exp_size)
@@ -115,10 +118,15 @@ where
     ) -> EcResult<Self> {
         let exp_bits = exp_size::<E>() * 8;
         let core_count = get_cuda_cores_count(&device.name());
+        debug!("vmx: multiexp: core_count: {}", core_count);
         let mem = device.memory();
+        debug!("vmx: multiexp: device memory: {}", mem);
         let max_n = calc_chunk_size::<E>(mem, core_count);
+        debug!("vmx: multiexp: max number of exponentiations: {}", max_n);
         let best_n = calc_best_chunk_size(MAX_WINDOW_SIZE, core_count, exp_bits);
+        debug!("vmx: multiexp: best number of exponentiations: {}", max_n);
         let n = std::cmp::min(max_n, best_n);
+        debug!("vmx: multiexp: number of exponentiations: {}", n);
 
         let source = match device.vendor() {
             Vendor::Nvidia => crate::gen_source::<E, Limb32>(),
