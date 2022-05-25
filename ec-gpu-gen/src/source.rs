@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 use std::mem;
 
-use ec_gpu::GpuField;
+use ec_gpu::{GpuField, GpuFieldName};
 
 static COMMON_SRC: &str = include_str!("cl/common.cl");
 static FIELD_SRC: &str = include_str!("cl/field.cl");
@@ -83,7 +83,7 @@ impl<F: GpuField> Field<F> {
     ///
     /// The sub-field is specified by generic on the field, the extension field by the generic on
     /// this function.
-    pub fn quadratic_extension<E: GpuField>() -> Self {
+    pub fn quadratic_extension<E: GpuFieldName>() -> Self {
         Self::ExtensionField(E::name())
     }
 

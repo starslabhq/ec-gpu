@@ -1,8 +1,9 @@
 use std::ops::AddAssign;
 use std::sync::{Arc, RwLock};
 
+use ec_gpu::GpuFieldName;
 use ff::PrimeField;
-use group::{prime::PrimeCurveAffine, Group};
+use group::{prime::PrimeCurveAffine, Curve, Group};
 use log::{error, info, warn};
 use pairing::Engine;
 use rust_gpu_tools::{program_closures, Device, Program, CUDA_CORES};
@@ -14,6 +15,7 @@ use crate::{
     threadpool::Worker,
 };
 
+// TODO vmx 2022-05-24: document what MAX_WINDOW_SIZE is about.
 const MAX_WINDOW_SIZE: usize = 10;
 const LOCAL_WORK_SIZE: usize = 256;
 const MEMORY_PADDING: f64 = 0.2f64; // Let 20% of GPU memory be free
@@ -38,6 +40,7 @@ where
 {
     program: Program,
     core_count: usize,
+    /// The number of exponentiations the GPU can handle in a single execution of the kernel.
     n: usize,
     /// An optional function which will be called at places where it is possible to abort the
     /// multiexp calculations. If it returns true, the calculation will be aborted with an
@@ -93,9 +96,33 @@ fn calc_best_chunk_size(max_window_size: usize, core_count: usize, exp_bits: usi
 //        - (2 * core_count * ((1 << MAX_WINDOW_SIZE) + 1) * proj_size))
 //        / (aff_size + exp_size)
 //}
+fn calc_chunk_size<E>(mem: u64, core_count: usize) -> usize
+where
+   E: Engine,
+{
+   let aff_size = std::mem::size_of::<E::G1Affine>() + std::mem::size_of::<E::G2Affine>();
+   //let aff_size = E::G1Affine::uncompressed_size() + E::G2Affine::uncompressed_size();
+   //let exp_size = exp_size::<E::G1Affine::Scalar>();
+   let exp_size = 10;
+   let proj_size = std::mem::size_of::<E::G1>() + std::mem::size_of::<E::G2>();
+   ((((mem as f64) * (1f64 - MEMORY_PADDING)) as usize)
+       - (2 * core_count * ((1 << MAX_WINDOW_SIZE) + 1) * proj_size))
+       / (aff_size + exp_size)
+}
 
-fn exp_size<G: PrimeCurveAffine>() -> usize {
-    std::mem::size_of::<<G::Scalar as PrimeField>::Repr>()
+fn vmx_calc_chunk_size<G>(mem: u64, core_count: usize) -> usize
+where
+    G: PrimeCurveAffine,
+{
+    // TODO vmx 2022-05-25: double check with actual numbers if that's really correct.
+    let aff_size = std::mem::size_of::<G::Repr>();
+    // TODO vmx 2022-05-25: double check with actual numbers if that's really correct.
+    let proj_size = std::mem::size_of::<G::Curve>();
+    0
+}
+
+fn exp_size<F: PrimeField>() -> usize {
+    std::mem::size_of::<F::Repr>()
 }
 
 impl<'a, G> SingleMultiexpKernel<'a, G>
@@ -110,7 +137,7 @@ where
         device: &Device,
         maybe_abort: Option<&'a (dyn Fn() -> bool + Send + Sync)>,
     ) -> EcResult<Self> {
-        let exp_bits = exp_size::<G>() * 8;
+        let exp_bits = exp_size::<G::Scalar>() * 8;
         let core_count = get_cuda_cores_count(&device.name());
         let mem = device.memory();
         // TODO vmx 2022-05-16: Calculate it again, this is just a hack to make it compile during
@@ -131,20 +158,30 @@ where
         })
     }
 
+    // TODO vmx 2022-05-25: `n` is not needed, we can just use `bases.len()` instead (and perhaps
+    // assert that `exps.len()` is the same.
     /// Run the actual multiexp computation on the GPU.
+    ///
+    /// The number of `bases` and `exponents` are determined by [`SingleMultiexpKernel::n`], this
+    /// means that it is guaranteed that this amount of calculations fit on the GPU this kernel is
+    /// running on.
     pub fn multiexp(
         &self,
         bases: &[G],
-        exps: &[<G::Scalar as PrimeField>::Repr],
+        exponents: &[<G::Scalar as PrimeField>::Repr],
         n: usize,
-    ) -> EcResult<G::Curve> {
+    ) -> EcResult<G::Curve>
+    where
+        G::Scalar: GpuFieldName,
+        <G::Curve as Curve>::Base: GpuFieldName,
+    {
         if let Some(maybe_abort) = &self.maybe_abort {
             if maybe_abort() {
                 return Err(EcError::Aborted);
             }
         }
 
-        let exp_bits = exp_size::<G>() * 8;
+        let exp_bits = exp_size::<G::Scalar>() * 8;
         let window_size = calc_window_size(n as usize, exp_bits, self.core_count);
         let num_windows = ((exp_bits as f64) / (window_size as f64)).ceil() as usize;
         let num_groups = calc_num_groups(self.core_count, num_windows);
@@ -156,7 +193,7 @@ where
 
         let closures = program_closures!(|program, _arg| -> EcResult<Vec<G::Curve>> {
             let base_buffer = program.create_buffer_from_slice(bases)?;
-            let exp_buffer = program.create_buffer_from_slice(exps)?;
+            let exp_buffer = program.create_buffer_from_slice(exponents)?;
 
             // It is safe as the GPU will initialize that buffer
             let bucket_buffer =
@@ -169,13 +206,12 @@ where
             let global_work_size =
                 (num_windows * num_groups + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE;
 
-            // TODO vmx 2022-05-16: This name depends on the point name, make sure we supply it
-            // somehow. Rethink again whether it makes sense to specify a point here or whether
-            // it should soleily based on the field. though then we would also need to supply a
-            // field name somehow, which probably doesn't make much different (whether
-            // supplying a point name or a field name).
-            let kernel =
-                program.create_kernel("bellman_multiexp", global_work_size, LOCAL_WORK_SIZE)?;
+            let kernel_name = format!(
+                "{}_{}_bellman_multiexp",
+                <G::Curve as Curve>::Base::name(),
+                G::Scalar::name()
+            );
+            let kernel = program.create_kernel(&kernel_name, global_work_size, LOCAL_WORK_SIZE)?;
 
             kernel
                 .arg(&base_buffer)
@@ -288,9 +324,13 @@ where
         exps: &'s [<G::Scalar as PrimeField>::Repr],
         results: &'s mut [G::Curve],
         error: Arc<RwLock<EcResult<()>>>,
-    ) {
+    ) where
+        G::Scalar: GpuFieldName,
+        <G::Curve as Curve>::Base: GpuFieldName,
+    {
         let num_devices = self.kernels.len();
         let num_exps = exps.len();
+        // The maximum number of exponentiations per device.
         let chunk_size = ((num_exps as f64) / (num_devices as f64)).ceil() as usize;
 
         for (((bases, exps), kern), result) in bases
@@ -333,7 +373,11 @@ where
         bases_arc: Arc<Vec<G>>,
         exps: Arc<Vec<<G::Scalar as PrimeField>::Repr>>,
         skip: usize,
-    ) -> EcResult<G::Curve> {
+    ) -> EcResult<G::Curve>
+    where
+        G::Scalar: GpuFieldName,
+        <G::Curve as Curve>::Base: GpuFieldName,
+    {
         // Bases are skipped by `self.1` elements, when converted from (Arc<Vec<G>>, usize) to Source
         // https://github.com/zkcrypto/bellman/blob/10c5010fd9c2ca69442dc9775ea271e286e776d8/src/multiexp.rs#L38
         let bases = &bases_arc[skip..(skip + exps.len())];

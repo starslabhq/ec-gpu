@@ -17,8 +17,8 @@
 //    type Scalar: GpuField;
 //}
 
-/// Describes how to generate the gpu sources for a Field.
-pub trait GpuField {
+/// The name that is used in the GPU source code to identify the field that is used.
+pub trait GpuFieldName {
     /// The name of the field.
     ///
     /// This name is used in the source code that is generated for the GPU. It should be globally
@@ -26,7 +26,10 @@ pub trait GpuField {
     /// is to use a combination of the curve you are using and the field name. For example:
     /// `bls12_381_fp`, `bls12_381_scalar`, or `pallas_fp`.
     fn name() -> String;
+}
 
+/// Describes how to generate the gpu sources for a Field.
+pub trait GpuField: GpuFieldName {
     /// Returns `1` as a vector of 32bit limbs.
     fn one() -> Vec<u32>;
 
