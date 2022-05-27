@@ -158,6 +158,7 @@ where
                 return Err(EcError::Aborted);
             }
         }
+        debug!("vmx: multiexp: number of exponentations on this GPU ({:?}): {}", std::any::type_name::<G>(), exps.len());
 
         let exp_bits = exp_size::<E>() * 8;
         let window_size = calc_window_size(n as usize, exp_bits, self.core_count);
