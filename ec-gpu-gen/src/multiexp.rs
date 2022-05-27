@@ -124,7 +124,7 @@ where
         let max_n = calc_chunk_size::<E>(mem, core_count);
         debug!("vmx: multiexp: max number of exponentiations: {}", max_n);
         let best_n = calc_best_chunk_size(MAX_WINDOW_SIZE, core_count, exp_bits);
-        debug!("vmx: multiexp: best number of exponentiations: {}", max_n);
+        debug!("vmx: multiexp: best number of exponentiations: {}", best_n);
         let n = std::cmp::min(max_n, best_n);
         debug!("vmx: multiexp: number of exponentiations: {}", n);
 
