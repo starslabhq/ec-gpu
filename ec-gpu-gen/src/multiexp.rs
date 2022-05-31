@@ -4,8 +4,7 @@ use std::sync::{Arc, RwLock};
 use ec_gpu::GpuFieldName;
 use ff::PrimeField;
 use group::{prime::PrimeCurveAffine, Curve, Group};
-use log::{error, info, warn};
-use pairing::Engine;
+use log::{debug, error, info, warn};
 use rust_gpu_tools::{program_closures, Device, Program, CUDA_CORES};
 use yastl::Scope;
 
@@ -20,6 +19,15 @@ const MAX_WINDOW_SIZE: usize = 10;
 const LOCAL_WORK_SIZE: usize = 256;
 const MEMORY_PADDING: f64 = 0.2f64; // Let 20% of GPU memory be free
 const DEFAULT_CUDA_CORES: usize = 2560;
+
+/// Divide and ceil to the next value.
+const fn div_ceil(a: usize, b: usize) -> usize {
+    if a % b == 0 {
+        a / b
+    } else {
+        (a / b) + 1
+    }
+}
 
 fn get_cuda_cores_count(name: &str) -> usize {
     *CUDA_CORES.get(name).unwrap_or_else(|| {
@@ -55,6 +63,13 @@ fn calc_num_groups(core_count: usize, num_windows: usize) -> usize {
     2 * core_count / num_windows
 }
 
+/// Calculates the window size, based on the given number of terms.
+///
+/// For best performance, the window size is reduced, so that maximum parallelism is possible. If
+/// you e.g. have put only a subset of the terms into the GPU memory, then a smaller window size
+/// leads to more windows, hence more units to work on, as we split the work into `num_windows *
+/// num_groups`.
+// TODO vmx 2022-05-30: change from `core_count` to `work_units`, which is `2 * core_count`.
 fn calc_window_size(n: usize, exp_bits: usize, core_count: usize) -> usize {
     // window_size = ln(n / num_groups)
     // num_windows = exp_bits / window_size
@@ -64,7 +79,8 @@ fn calc_window_size(n: usize, exp_bits: usize, core_count: usize) -> usize {
     //
     // Thus we need to solve the following equation:
     // window_size + ln(window_size) = ln(exp_bits * n / (2 * core_count))
-    let lower_bound = (((exp_bits * n) as f64) / ((2 * core_count) as f64)).ln();
+    let exp_bits_per_work_unit = div_ceil(exp_bits * n, 2 * core_count);
+    let lower_bound = (exp_bits_per_work_unit as f64).ln();
     for w in 0..MAX_WINDOW_SIZE {
         if (w as f64) + (w as f64).ln() > lower_bound {
             return w;
@@ -74,53 +90,48 @@ fn calc_window_size(n: usize, exp_bits: usize, core_count: usize) -> usize {
     MAX_WINDOW_SIZE
 }
 
+/// Calculates the number of terms that could optimally be calculated on the GPU, if the GPU had
+/// an unlimited amount of memory.
+// TODO vmx 2022-05-30: change from `core_count` to `work_units`, which is `2 * core_count`.
 fn calc_best_chunk_size(max_window_size: usize, core_count: usize, exp_bits: usize) -> usize {
     // Best chunk-size (N) can also be calculated using the same logic as calc_window_size:
     // n = e^window_size * window_size * 2 * core_count / exp_bits
-    (((max_window_size as f64).exp() as f64)
-        * (max_window_size as f64)
-        * 2f64
-        * (core_count as f64)
-        / (exp_bits as f64))
-        .ceil() as usize
+    let max_buckets_per_work_unit = (1 << MAX_WINDOW_SIZE) - 1;
+    let work_units = 2 * core_count;
+    div_ceil(
+        max_buckets_per_work_unit * max_window_size * work_units,
+        exp_bits,
+    )
 }
 
-//fn calc_chunk_size<E>(mem: u64, core_count: usize) -> usize
-//where
-//    E: Engine,
-//{
-//    let aff_size = std::mem::size_of::<E::G1Affine>() + std::mem::size_of::<E::G2Affine>();
-//    let exp_size = exp_size::<E>();
-//    let proj_size = std::mem::size_of::<E::G1>() + std::mem::size_of::<E::G2>();
-//    ((((mem as f64) * (1f64 - MEMORY_PADDING)) as usize)
-//        - (2 * core_count * ((1 << MAX_WINDOW_SIZE) + 1) * proj_size))
-//        / (aff_size + exp_size)
-//}
-fn calc_chunk_size<E>(mem: u64, core_count: usize) -> usize
-where
-   E: Engine,
-{
-   let aff_size = std::mem::size_of::<E::G1Affine>() + std::mem::size_of::<E::G2Affine>();
-   //let aff_size = E::G1Affine::uncompressed_size() + E::G2Affine::uncompressed_size();
-   //let exp_size = exp_size::<E::G1Affine::Scalar>();
-   let exp_size = 10;
-   let proj_size = std::mem::size_of::<E::G1>() + std::mem::size_of::<E::G2>();
-   ((((mem as f64) * (1f64 - MEMORY_PADDING)) as usize)
-       - (2 * core_count * ((1 << MAX_WINDOW_SIZE) + 1) * proj_size))
-       / (aff_size + exp_size)
-}
-
-fn vmx_calc_chunk_size<G>(mem: u64, core_count: usize) -> usize
+/// Calculates the maximum number of terms that can be put onto the GPU memory.
+// The core count is needed as it determines how much auxiliary space we need.
+// TODO vmx 2022-05-30: change from `core_count` to `work_units`, which is `2 * core_count`.
+// TODO vmx 2022-05-30: rename to `calc_max_chunk_size`.
+fn calc_chunk_size<G>(mem: u64, core_count: usize) -> usize
 where
     G: PrimeCurveAffine,
 {
     // TODO vmx 2022-05-25: double check with actual numbers if that's really correct.
     let aff_size = std::mem::size_of::<G::Repr>();
+    debug!("vmx: multiexp: calc_chunk_size: aff_size: {}", aff_size);
+    let exp_size = exp_size::<G::Scalar>();
+    debug!("vmx: multiexp: calc_chunk_size: exp_size: {}", exp_size);
     // TODO vmx 2022-05-25: double check with actual numbers if that's really correct.
     let proj_size = std::mem::size_of::<G::Curve>();
-    0
+    debug!("vmx: multiexp: calc_chunk_size: proj_size: {}", proj_size);
+    // Leave `MEMORY_PADDING` percent of the memory free.
+    let max_memory = ((mem as f64) * (1f64 - MEMORY_PADDING)) as usize;
+    let max_buckets_per_work_unit = (1 << MAX_WINDOW_SIZE) - 1;
+    let work_units = 2 * core_count;
+    // The `+1` is for storing the result of one work unit.
+    let auxiliary_size = work_units * (max_buckets_per_work_unit + 1) * proj_size;
+    div_ceil(max_memory - auxiliary_size, aff_size + exp_size)
 }
 
+/// The size of the exponent in bytes.
+///
+/// It's the actual bytes size it needs in memory, not it's theoratical bit size.
 fn exp_size<F: PrimeField>() -> usize {
     std::mem::size_of::<F::Repr>()
 }
@@ -140,10 +151,7 @@ where
         let exp_bits = exp_size::<G::Scalar>() * 8;
         let core_count = get_cuda_cores_count(&device.name());
         let mem = device.memory();
-        // TODO vmx 2022-05-16: Calculate it again, this is just a hack to make it compile during
-        // the refactoring.
-        //let max_n = calc_chunk_size::<E>(mem, core_count);
-        let max_n = 1000;
+        let max_n = calc_chunk_size::<G>(mem, core_count);
         let best_n = calc_best_chunk_size(MAX_WINDOW_SIZE, core_count, exp_bits);
         let n = std::cmp::min(max_n, best_n);
 
@@ -180,6 +188,11 @@ where
                 return Err(EcError::Aborted);
             }
         }
+        debug!(
+            "vmx: multiexp: number of exponentations on this GPU ({:?}): {}",
+            std::any::type_name::<G>(),
+            exponents.len()
+        );
 
         let exp_bits = exp_size::<G::Scalar>() * 8;
         let window_size = calc_window_size(n as usize, exp_bits, self.core_count);
@@ -248,6 +261,10 @@ where
         }
 
         Ok(acc)
+    }
+
+    fn num_work_units(&self) -> usize {
+        self.core_count * 2
     }
 }
 
@@ -332,6 +349,16 @@ where
         let num_exps = exps.len();
         // The maximum number of exponentiations per device.
         let chunk_size = ((num_exps as f64) / (num_devices as f64)).ceil() as usize;
+        debug!(
+            "vmx: multiexp: total number of exps2({:?}): {}",
+            std::any::type_name::<G>(),
+            num_exps
+        );
+        debug!(
+            "vmx: multiexp: total number of exps per GPU ({:?}): {}",
+            std::any::type_name::<G>(),
+            chunk_size
+        );
 
         for (((bases, exps), kern), result) in bases
             .chunks(chunk_size)
@@ -382,6 +409,12 @@ where
         // https://github.com/zkcrypto/bellman/blob/10c5010fd9c2ca69442dc9775ea271e286e776d8/src/multiexp.rs#L38
         let bases = &bases_arc[skip..(skip + exps.len())];
         let exps = &exps[..];
+        debug!(
+            "vmx: multiexp: total number of based and exps ({}): {} {}",
+            std::any::type_name::<G>(),
+            &bases_arc.len(),
+            &exps.len()
+        );
 
         let mut results = Vec::new();
         let error = Arc::new(RwLock::new(Ok(())));
