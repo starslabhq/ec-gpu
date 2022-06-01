@@ -279,6 +279,8 @@ where
 impl<'a, G> MultiexpKernel<'a, G>
 where
     G: PrimeCurveAffine,
+    G::Scalar: GpuFieldName,
+    <G::Curve as Curve>::Base: GpuFieldName,
 {
     /// Create new kernels, one for each given device.
     pub fn create(devices: &[&Device]) -> EcResult<Self> {
@@ -341,10 +343,7 @@ where
         exps: &'s [<G::Scalar as PrimeField>::Repr],
         results: &'s mut [G::Curve],
         error: Arc<RwLock<EcResult<()>>>,
-    ) where
-        G::Scalar: GpuFieldName,
-        <G::Curve as Curve>::Base: GpuFieldName,
-    {
+    ) {
         let num_devices = self.kernels.len();
         let num_exps = exps.len();
         // The maximum number of exponentiations per device.
@@ -401,9 +400,6 @@ where
         exps: Arc<Vec<<G::Scalar as PrimeField>::Repr>>,
         skip: usize,
     ) -> EcResult<G::Curve>
-    where
-        G::Scalar: GpuFieldName,
-        <G::Curve as Curve>::Base: GpuFieldName,
     {
         // Bases are skipped by `self.1` elements, when converted from (Arc<Vec<G>>, usize) to Source
         // https://github.com/zkcrypto/bellman/blob/10c5010fd9c2ca69442dc9775ea271e286e776d8/src/multiexp.rs#L38

@@ -33,7 +33,6 @@ pub mod multiexp;
 /// Multiexponentiation on the CPU.
 pub mod multiexp_cpu;
 /// Helpers for multithreaded code.
-#[cfg(any(feature = "cuda", feature = "opencl"))]
 pub mod threadpool;
 
 /// Re-export rust-gpu-tools as things like [`rust_gpu_tools::Device`] might be needed.

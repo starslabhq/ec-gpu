@@ -88,10 +88,10 @@ pub trait QueryDensity: Sized {
 
     fn iter(self) -> Self::Iter;
     fn get_query_size(self) -> Option<usize>;
-    fn generate_exps<E: Engine>(
+    fn generate_exps<F: PrimeField>(
         self,
-        exponents: Arc<Vec<<<E as Engine>::Fr as PrimeField>::Repr>>,
-    ) -> Arc<Vec<<<E as Engine>::Fr as PrimeField>::Repr>>;
+        exponents: Arc<Vec<F::Repr>>,
+    ) -> Arc<Vec<F::Repr>>;
 }
 
 #[derive(Clone)]
@@ -114,10 +114,10 @@ impl<'a> QueryDensity for &'a FullDensity {
         None
     }
 
-    fn generate_exps<E: Engine>(
+    fn generate_exps<F: PrimeField>(
         self,
-        exponents: Arc<Vec<<<E as Engine>::Fr as PrimeField>::Repr>>,
-    ) -> Arc<Vec<<<E as Engine>::Fr as PrimeField>::Repr>> {
+        exponents: Arc<Vec<F::Repr>>,
+    ) -> Arc<Vec<F::Repr>> {
         exponents
     }
 }
@@ -139,10 +139,10 @@ impl<'a> QueryDensity for &'a DensityTracker {
         Some(self.bv.len())
     }
 
-    fn generate_exps<E: Engine>(
+    fn generate_exps<F: PrimeField>(
         self,
-        exponents: Arc<Vec<<<E as Engine>::Fr as PrimeField>::Repr>>,
-    ) -> Arc<Vec<<<E as Engine>::Fr as PrimeField>::Repr>> {
+        exponents: Arc<Vec<F::Repr>>,
+    ) -> Arc<Vec<F::Repr>> {
         let exps: Vec<_> = exponents
             .iter()
             .zip(self.bv.iter())
@@ -340,7 +340,7 @@ where
 
 /// Perform multi-exponentiation. The caller is responsible for ensuring the
 /// query size is the same as the number of exponents.
-pub fn multiexp_cpu<'b, Q, D, G, E, S>(
+pub fn multiexp_cpu<'b, Q, D, G, S>(
     pool: &Worker,
     bases: S,
     density_map: D,
@@ -350,7 +350,6 @@ where
     for<'a> &'a Q: QueryDensity,
     D: Send + Sync + 'static + Clone + AsRef<Q>,
     G: PrimeCurveAffine,
-    E: Engine<Fr = G::Scalar>,
     S: SourceBuilder<G>,
 {
     let c = if exponents.len() < 32 {
