@@ -152,8 +152,11 @@ where
         let core_count = get_cuda_cores_count(&device.name());
         let mem = device.memory();
         let max_n = calc_chunk_size::<G>(mem, core_count);
+        debug!("vmx: multiexp: create: max chunk size for GPU: {}", max_n);
         let best_n = calc_best_chunk_size(MAX_WINDOW_SIZE, core_count, exp_bits);
+        debug!("vmx: multiexp: create: best chunk size possible: {}", best_n);
         let n = std::cmp::min(max_n, best_n);
+        debug!("vmx: multiexp: create: actual chunk size: {}", n);
 
         let program = program::program(device)?;
 
