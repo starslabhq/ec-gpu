@@ -88,10 +88,7 @@ pub trait QueryDensity: Sized {
 
     fn iter(self) -> Self::Iter;
     fn get_query_size(self) -> Option<usize>;
-    fn generate_exps<F: PrimeField>(
-        self,
-        exponents: Arc<Vec<F::Repr>>,
-    ) -> Arc<Vec<F::Repr>>;
+    fn generate_exps<F: PrimeField>(self, exponents: Arc<Vec<F::Repr>>) -> Arc<Vec<F::Repr>>;
 }
 
 #[derive(Clone)]
@@ -114,10 +111,7 @@ impl<'a> QueryDensity for &'a FullDensity {
         None
     }
 
-    fn generate_exps<F: PrimeField>(
-        self,
-        exponents: Arc<Vec<F::Repr>>,
-    ) -> Arc<Vec<F::Repr>> {
+    fn generate_exps<F: PrimeField>(self, exponents: Arc<Vec<F::Repr>>) -> Arc<Vec<F::Repr>> {
         exponents
     }
 }
@@ -139,10 +133,7 @@ impl<'a> QueryDensity for &'a DensityTracker {
         Some(self.bv.len())
     }
 
-    fn generate_exps<F: PrimeField>(
-        self,
-        exponents: Arc<Vec<F::Repr>>,
-    ) -> Arc<Vec<F::Repr>> {
+    fn generate_exps<F: PrimeField>(self, exponents: Arc<Vec<F::Repr>>) -> Arc<Vec<F::Repr>> {
         let exps: Vec<_> = exponents
             .iter()
             .zip(self.bv.iter())
