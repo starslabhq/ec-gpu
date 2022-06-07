@@ -162,6 +162,7 @@ impl<F: GpuField, Exp: GpuField, L: Limb> NameAndSource<L> for Multiexp<F, Exp> 
 ///
 /// ```
 /// use blstrs::{Fp, Fp2, Scalar};
+/// use ec_gpu_gen::{Config, Field};
 ///
 /// let source = Config::new()
 ///     .add_fft(Field::<Scalar>::new())
