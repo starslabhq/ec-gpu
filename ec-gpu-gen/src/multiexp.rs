@@ -127,13 +127,20 @@ where
     // TODO vmx 2022-05-25: double check with actual numbers if that's really correct.
     let proj_size = std::mem::size_of::<G::Curve>();
     debug!("vmx: multiexp: calc_chunk_size: proj_size: {}", proj_size);
+
     // Leave `MEMORY_PADDING` percent of the memory free.
     let max_memory = ((mem as f64) * (1f64 - MEMORY_PADDING)) as usize;
+    // The amount of memory (in bytes) of a single term.
+    let term_size = aff_size + exp_size;
+    // The number of buckets needed for one work unit is `2^window_size - 1`.
     let max_buckets_per_work_unit = (1 << MAX_WINDOW_SIZE) - 1;
     let work_units = 2 * core_count;
-    // The `+1` is for storing the result of one work unit.
-    let auxiliary_size = work_units * (max_buckets_per_work_unit + 1) * proj_size;
-    div_ceil(max_memory - auxiliary_size, aff_size + exp_size)
+    // The amount of memory (in bytes) we need for the intermediate steps (buckets).
+    let buckets_size = work_units * max_buckets_per_work_unit * proj_size;
+    // The amount of memory (in bytes) we need for the results.
+    let results_size = work_units * proj_size;
+
+    (max_memory - buckets_size - results_size) / term_size
 }
 
 /// The size of the exponent in bytes.
@@ -384,6 +391,11 @@ where
             let error = error.clone();
             scope.execute(move || {
                 let mut acc = G::Curve::identity();
+                debug!(
+                    "vmx: multiexp: number of terms per kernel ({:?}): {}",
+                    std::any::type_name::<G>(),
+                    kern.n
+                );
                 for (bases, exps) in bases.chunks(kern.n).zip(exps.chunks(kern.n)) {
                     if error.read().unwrap().is_err() {
                         break;
