@@ -121,7 +121,7 @@ where
     G::Scalar: PrimeField,
 {
     // TODO vmx 2022-05-25: double check with actual numbers if that's really correct.
-    let aff_size = std::mem::size_of::<G::Repr>();
+    let aff_size = std::mem::size_of::<G>();
     debug!("vmx: multiexp: calc_chunk_size: aff_size: {}", aff_size);
     let exp_size = exp_size::<G::Scalar>();
     debug!("vmx: multiexp: calc_chunk_size: exp_size: {}", exp_size);
