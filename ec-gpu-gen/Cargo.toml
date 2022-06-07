@@ -41,7 +41,8 @@ sha2 = "0.10"
 
 [features]
 #default = ["bls12", "cuda", "opencl"]
-default = ["bls12", "opencl"]
+#default = ["bls12", "opencl"]
+default = ["cuda", "opencl"]
 cuda = ["rust-gpu-tools/cuda"]
 opencl = ["rust-gpu-tools/opencl"]
 # Generate a kernel for BLS12-381 usage.

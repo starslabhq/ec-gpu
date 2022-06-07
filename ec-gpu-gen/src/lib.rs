@@ -40,5 +40,4 @@ pub mod threadpool;
 pub use rust_gpu_tools;
 
 pub use error::{EcError, EcResult};
-//pub use source::{common, field, gen_ec_source, gen_source, Limb, Limb32, Limb64};
 pub use source::{Config, Limb, Limb32, Limb64};

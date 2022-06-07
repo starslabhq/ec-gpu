@@ -1,6 +1,9 @@
+#[cfg(feature = "bls12")]
 use std::path::PathBuf;
+#[cfg(feature = "bls12")]
 use std::{env, fs};
 
+#[cfg(feature = "bls12")]
 #[path = "src/source.rs"]
 mod source;
 
@@ -32,7 +35,7 @@ fn main() {
     generate_opencl();
 }
 
-#[cfg(feature = "cuda")]
+#[cfg(all(feature = "bls12", feature = "cuda"))]
 fn generate_cuda() {
     use sha2::{Digest, Sha256};
 
@@ -111,7 +114,7 @@ fn generate_cuda() {
     );
 }
 
-#[cfg(feature = "opencl")]
+#[cfg(all(feature = "bls12", feature = "opencl"))]
 fn generate_opencl() {
     let kernel_source = bls12_config::<source::Limb64>().gen_source();
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR was not set.");
