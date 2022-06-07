@@ -6,7 +6,6 @@ mod source;
 
 #[cfg(feature = "bls12")]
 use source::{Config, Field, Limb};
-use source::{Limb32, Limb64};
 
 #[cfg(feature = "bls12")]
 fn bls12_config<L: Limb>() -> Config<L> {
@@ -44,7 +43,7 @@ fn generate_cuda() {
         return;
     }
 
-    let kernel_source = bls12_config::<Limb32>().gen_source();
+    let kernel_source = bls12_config::<source::Limb32>().gen_source();
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR was not set.");
 
     // Make it possible to override the default options. Though the source and output file is
@@ -114,7 +113,7 @@ fn generate_cuda() {
 
 #[cfg(feature = "opencl")]
 fn generate_opencl() {
-    let kernel_source = bls12_config::<Limb64>().gen_source();
+    let kernel_source = bls12_config::<source::Limb64>().gen_source();
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR was not set.");
 
     // Generating the kernel source is cheap, hence use a fixed name and override it on every

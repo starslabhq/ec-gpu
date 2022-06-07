@@ -188,6 +188,7 @@ pub struct Config<L: Limb> {
 }
 
 impl<L: Limb> Config<L> {
+    /// Create a new configuration to generation a GPU kernel.
     pub fn new() -> Self {
         Self {
             fields: HashSet::new(),
@@ -509,7 +510,7 @@ mod tests {
     use rust_gpu_tools::{program_closures, Device, GPUError, Program};
 
     use blstrs::Scalar;
-    use ff::{Field, PrimeField};
+    use ff::{Field as _, PrimeField};
     use lazy_static::lazy_static;
     use rand::{thread_rng, Rng};
 
@@ -547,30 +548,13 @@ mod tests {
         }
     }
 
-    // CUDA doesn't support 64-bit limbs
-    #[cfg(feature = "cuda")]
-    fn source_cuda() -> String {
-        let src = vec![
-            common(),
-            field::<Scalar, Limb32>("Scalar32"),
-            TEST_SRC.to_string(),
-        ]
-        .join("\n\n");
-        println!("{}", src);
-        src
-    }
-
-    #[cfg(feature = "opencl")]
-    fn source_opencl() -> String {
-        let src = vec![
-            common(),
-            field::<Scalar, Limb32>("Scalar32"),
-            field::<Scalar, Limb64>("Scalar64"),
-            TEST_SRC.to_string(),
-        ]
-        .join("\n\n");
-        println!("{}", src);
-        src
+    fn test_source<L: Limb>() -> String {
+        let field = Field::<Scalar>::new();
+        let field_source = Config::<L>::new()
+            .add_field::<Scalar>(field.clone())
+            .gen_source();
+        let test_source = String::from(TEST_SRC).replace("FIELD", &field.name());
+        [field_source, test_source].concat()
     }
 
     #[cfg(feature = "cuda")]
@@ -582,12 +566,13 @@ mod tests {
 
             let tmpdir = tempfile::tempdir().expect("Cannot create temporary directory.");
             let source_path = tmpdir.path().join("kernel.cu");
-            fs::write(&source_path, source_cuda().as_bytes())
+            fs::write(&source_path, test_source::<Limb32>().as_bytes())
                 .expect("Cannot write kernel source file.");
             let fatbin_path = tmpdir.path().join("kernel.fatbin");
 
             let nvcc = Command::new("nvcc")
                 .arg("--fatbin")
+                .arg("--threads=0")
                 .arg("--gpu-architecture=sm_86")
                 .arg("--generate-code=arch=compute_86,code=sm_86")
                 .arg("--generate-code=arch=compute_80,code=sm_80")
@@ -618,11 +603,14 @@ mod tests {
 
     #[cfg(feature = "opencl")]
     lazy_static! {
-        static ref OPENCL_PROGRAM: Mutex<Program> = {
+        static ref OPENCL_PROGRAM: Mutex<(Program, Program)> = {
             let device = *Device::all().first().expect("Cannot get a default device");
             let opencl_device = device.opencl_device().unwrap();
-            let program = opencl::Program::from_opencl(opencl_device, &source_opencl()).unwrap();
-            Mutex::new(Program::Opencl(program))
+            let program_32 =
+                opencl::Program::from_opencl(opencl_device, &test_source::<Limb32>()).unwrap();
+            let program_64 =
+                opencl::Program::from_opencl(opencl_device, &test_source::<Limb64>()).unwrap();
+            Mutex::new((Program::Opencl(program_32), Program::Opencl(program_64)))
         };
     }
 
@@ -644,18 +632,36 @@ mod tests {
             Ok(cpu_buffer[0].0)
         });
 
+        // For CUDA we only test 32-bit limbs.
         #[cfg(all(feature = "cuda", not(feature = "opencl")))]
         return CUDA_PROGRAM.lock().unwrap().run(closures, ()).unwrap();
 
+        // For OpenCL we test for 32 and 64-bi limbs.
         #[cfg(all(feature = "opencl", not(feature = "cuda")))]
-        return OPENCL_PROGRAM.lock().unwrap().run(closures, ()).unwrap();
+        {
+            let result_32 = OPENCL_PROGRAM.lock().unwrap().0.run(closures, ()).unwrap();
+            let result_64 = OPENCL_PROGRAM.lock().unwrap().1.run(closures, ()).unwrap();
+            assert_eq!(
+                result_32, result_64,
+                "Results for 32-bit and 64-bit limbs must be the same."
+            );
+            result_32
+        }
 
         // When both features are enabled, check if the results are the same
         #[cfg(all(feature = "cuda", feature = "opencl"))]
         {
             let cuda_result = CUDA_PROGRAM.lock().unwrap().run(closures, ()).unwrap();
-            let opencl_result = OPENCL_PROGRAM.lock().unwrap().run(closures, ()).unwrap();
-            assert_eq!(cuda_result, opencl_result);
+            let opencl_32_result = OPENCL_PROGRAM.lock().unwrap().0.run(closures, ()).unwrap();
+            let opencl_64_result = OPENCL_PROGRAM.lock().unwrap().1.run(closures, ()).unwrap();
+            assert_eq!(
+                opencl_32_result, opencl_64_result,
+                "Results for 32-bit and 64-bit limbs on OpenCL must be the same."
+            );
+            assert_eq!(
+                cuda_result, opencl_32_result,
+                "Results for CUDA and OpenCL must be the same."
+            );
             cuda_result
         }
     }
@@ -669,12 +675,7 @@ mod tests {
             let c = a + b;
 
             assert_eq!(
-                call_kernel("test_add_32", &[GpuScalar(a), GpuScalar(b)], &[]),
-                c
-            );
-            #[cfg(not(feature = "cuda"))]
-            assert_eq!(
-                call_kernel("test_add_64", &[GpuScalar(a), GpuScalar(b)], &[]),
+                call_kernel("test_add", &[GpuScalar(a), GpuScalar(b)], &[]),
                 c
             );
         }
@@ -688,12 +689,7 @@ mod tests {
             let b = Scalar::random(&mut rng);
             let c = a - b;
             assert_eq!(
-                call_kernel("test_sub_32", &[GpuScalar(a), GpuScalar(b)], &[]),
-                c
-            );
-            #[cfg(not(feature = "cuda"))]
-            assert_eq!(
-                call_kernel("test_sub_64", &[GpuScalar(a), GpuScalar(b)], &[]),
+                call_kernel("test_sub", &[GpuScalar(a), GpuScalar(b)], &[]),
                 c
             );
         }
@@ -708,12 +704,7 @@ mod tests {
             let c = a * b;
 
             assert_eq!(
-                call_kernel("test_mul_32", &[GpuScalar(a), GpuScalar(b)], &[]),
-                c
-            );
-            #[cfg(not(feature = "cuda"))]
-            assert_eq!(
-                call_kernel("test_mul_64", &[GpuScalar(a), GpuScalar(b)], &[]),
+                call_kernel("test_mul", &[GpuScalar(a), GpuScalar(b)], &[]),
                 c
             );
         }
@@ -726,9 +717,7 @@ mod tests {
             let a = Scalar::random(&mut rng);
             let b = rng.gen::<u32>();
             let c = a.pow_vartime([b as u64]);
-            assert_eq!(call_kernel("test_pow_32", &[GpuScalar(a)], &[b]), c);
-            #[cfg(not(feature = "cuda"))]
-            assert_eq!(call_kernel("test_pow_64", &[GpuScalar(a)], &[b]), c);
+            assert_eq!(call_kernel("test_pow", &[GpuScalar(a)], &[b]), c);
         }
     }
 
@@ -739,9 +728,7 @@ mod tests {
             let a = Scalar::random(&mut rng);
             let b = a.square();
 
-            assert_eq!(call_kernel("test_sqr_32", &[GpuScalar(a)], &[]), b);
-            #[cfg(not(feature = "cuda"))]
-            assert_eq!(call_kernel("test_sqr_64", &[GpuScalar(a)], &[]), b);
+            assert_eq!(call_kernel("test_sqr", &[GpuScalar(a)], &[]), b);
         }
     }
 
@@ -752,9 +739,7 @@ mod tests {
             let a = Scalar::random(&mut rng);
             let b = a.double();
 
-            assert_eq!(call_kernel("test_double_32", &[GpuScalar(a)], &[]), b);
-            #[cfg(not(feature = "cuda"))]
-            assert_eq!(call_kernel("test_double_64", &[GpuScalar(a)], &[]), b);
+            assert_eq!(call_kernel("test_double", &[GpuScalar(a)], &[]), b);
         }
     }
 
@@ -764,9 +749,7 @@ mod tests {
         for _ in 0..10 {
             let a = Scalar::random(&mut rng);
             let b: Scalar = unsafe { std::mem::transmute(a.to_repr()) };
-            assert_eq!(call_kernel("test_unmont_32", &[GpuScalar(a)], &[]), b);
-            #[cfg(not(feature = "cuda"))]
-            assert_eq!(call_kernel("test_unmont_64", &[GpuScalar(a)], &[]), b);
+            assert_eq!(call_kernel("test_unmont", &[GpuScalar(a)], &[]), b);
         }
     }
 
@@ -777,9 +760,7 @@ mod tests {
             let a_repr = Scalar::random(&mut rng).to_repr();
             let a: Scalar = unsafe { std::mem::transmute(a_repr) };
             let b = Scalar::from_repr(a_repr).unwrap();
-            assert_eq!(call_kernel("test_mont_32", &[GpuScalar(a)], &[]), b);
-            #[cfg(not(feature = "cuda"))]
-            assert_eq!(call_kernel("test_mont_64", &[GpuScalar(a)], &[]), b);
+            assert_eq!(call_kernel("test_mont", &[GpuScalar(a)], &[]), b);
         }
     }
 }

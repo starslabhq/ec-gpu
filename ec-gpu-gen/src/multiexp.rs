@@ -154,7 +154,10 @@ where
         let max_n = calc_chunk_size::<G>(mem, core_count);
         debug!("vmx: multiexp: create: max chunk size for GPU: {}", max_n);
         let best_n = calc_best_chunk_size(MAX_WINDOW_SIZE, core_count, exp_bits);
-        debug!("vmx: multiexp: create: best chunk size possible: {}", best_n);
+        debug!(
+            "vmx: multiexp: create: best chunk size possible: {}",
+            best_n
+        );
         let n = std::cmp::min(max_n, best_n);
         debug!("vmx: multiexp: create: actual chunk size: {}", n);
 
@@ -450,24 +453,26 @@ mod tests {
     use blstrs::Bls12;
     use ff::Field;
     use group::Curve;
+    use pairing::Engine;
 
     use crate::multiexp_cpu::{multiexp_cpu, FullDensity, QueryDensity, SourceBuilder};
 
-    fn multiexp_gpu<Q, D, G, E, S>(
+    fn multiexp_gpu<Q, D, G, S>(
         pool: &Worker,
         bases: S,
         density_map: D,
         exponents: Arc<Vec<<G::Scalar as PrimeField>::Repr>>,
-        kern: &mut MultiexpKernel<E>,
+        kern: &mut MultiexpKernel<G>,
     ) -> Result<G::Curve, EcError>
     where
         for<'a> &'a Q: QueryDensity,
         D: Send + Sync + 'static + Clone + AsRef<Q>,
         G: PrimeCurveAffine,
-        E: Engine<Fr = G::Scalar>,
+        G::Scalar: GpuFieldName,
+        <G::Curve as group::Curve>::Base: GpuFieldName,
         S: SourceBuilder<G>,
     {
-        let exps = density_map.as_ref().generate_exps::<E>(exponents);
+        let exps = density_map.as_ref().generate_exps::<G::Scalar>(exponents);
         let (bss, skip) = bases.get();
         kern.multiexp(pool, bss, exps, skip).map_err(Into::into)
     }
@@ -477,8 +482,8 @@ mod tests {
         const MAX_LOG_D: usize = 16;
         const START_LOG_D: usize = 10;
         let devices = Device::all();
-        let mut kern =
-            MultiexpKernel::<Bls12>::create(&devices).expect("Cannot initialize kernel!");
+        let mut kern = MultiexpKernel::<<Bls12 as Engine>::G1Affine>::create(&devices)
+            .expect("Cannot initialize kernel!");
         let pool = Worker::new();
 
         let mut rng = rand::thread_rng();
@@ -506,10 +511,9 @@ mod tests {
             println!("GPU took {}ms.", gpu_dur);
 
             now = Instant::now();
-            let cpu =
-                multiexp_cpu::<_, _, _, Bls12, _>(&pool, (g.clone(), 0), FullDensity, v.clone())
-                    .wait()
-                    .unwrap();
+            let cpu = multiexp_cpu(&pool, (g.clone(), 0), FullDensity, v.clone())
+                .wait()
+                .unwrap();
             let cpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
             println!("CPU took {}ms.", cpu_dur);
 

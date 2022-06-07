@@ -8,7 +8,6 @@ use std::sync::Arc;
 use bitvec::prelude::{BitVec, Lsb0};
 use ff::{Field, PrimeField};
 use group::{prime::PrimeCurveAffine, Group};
-use pairing::Engine;
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
 use crate::error::EcError;
@@ -364,6 +363,7 @@ mod tests {
 
     use blstrs::Bls12;
     use group::Curve;
+    use pairing::Engine;
     use rand::Rng;
     use rand_core::SeedableRng;
     use rand_xorshift::XorShiftRng;
@@ -405,9 +405,7 @@ mod tests {
         let pool = Worker::new();
 
         let v = Arc::new(v.into_iter().map(|fr| fr.to_repr()).collect());
-        let fast = multiexp_cpu::<_, _, _, Bls12, _>(&pool, (g, 0), FullDensity, v)
-            .wait()
-            .unwrap();
+        let fast = multiexp_cpu(&pool, (g, 0), FullDensity, v).wait().unwrap();
 
         println!("Fast: {}", now.elapsed().as_millis());
 
