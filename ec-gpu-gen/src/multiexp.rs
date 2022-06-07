@@ -133,7 +133,8 @@ where
     // The amount of memory (in bytes) of a single term.
     let term_size = aff_size + exp_size;
     // The number of buckets needed for one work unit is `2^window_size - 1`.
-    let max_buckets_per_work_unit = (1 << MAX_WINDOW_SIZE) - 1;
+    // TODO vmx 2022-06-07: Check why the global buffer allocation is not using the `- 1`.
+    let max_buckets_per_work_unit = 1 << MAX_WINDOW_SIZE;
     let work_units = 2 * core_count;
     // The amount of memory (in bytes) we need for the intermediate steps (buckets).
     let buckets_size = work_units * max_buckets_per_work_unit * proj_size;
