@@ -118,6 +118,7 @@ fn calc_best_chunk_size(max_window_size: usize, core_count: usize, exp_bits: usi
 fn calc_chunk_size<G>(mem: u64, core_count: usize) -> usize
 where
     G: PrimeCurveAffine,
+    G::Scalar: PrimeField,
 {
     // TODO vmx 2022-05-25: double check with actual numbers if that's really correct.
     let aff_size = std::mem::size_of::<G::Repr>();
@@ -227,13 +228,17 @@ where
 
         let closures = program_closures!(|program, _arg| -> EcResult<Vec<G::Curve>> {
             let base_buffer = program.create_buffer_from_slice(bases)?;
+            debug!("vmx: multiexp: program: bucket buffer mem size: mem, calc'ed: {} {}", std::mem::size_of_val(&base_buffer), std::mem::size_of::<G>() * bases.len());
             let exp_buffer = program.create_buffer_from_slice(exponents)?;
+            debug!("vmx: multiexp: program: bucket buffer mem size: mem, calc'ed: {} {}", std::mem::size_of_val(&exp_buffer), std::mem::size_of::<<G::Scalar as PrimeField>::Repr>() * exponents.len());
 
             // It is safe as the GPU will initialize that buffer
             let bucket_buffer =
                 unsafe { program.create_buffer::<G::Curve>(2 * self.core_count * bucket_len)? };
+            debug!("vmx: multiexp: program: bucket buffer mem size: mem, calc'ed: {} {}", std::mem::size_of_val(&bucket_buffer), std::mem::size_of::<G::Curve>() * 2 * self.core_count * bucket_len);
             // It is safe as the GPU will initialize that buffer
             let result_buffer = unsafe { program.create_buffer::<G::Curve>(2 * self.core_count)? };
+            debug!("vmx: multiexp: program: bucket buffer mem size: mem, calc'ed: {} {}", std::mem::size_of_val(&result_buffer), std::mem::size_of::<G::Curve>() * 2 * self.core_count);
 
             // The global work size follows CUDA's definition and is the number of
             // `LOCAL_WORK_SIZE` sized thread groups.
