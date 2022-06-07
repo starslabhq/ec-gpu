@@ -444,6 +444,7 @@ where
     }
 }
 
+#[cfg(feature = "bls12")]
 #[cfg(test)]
 mod tests {
     use super::*;
