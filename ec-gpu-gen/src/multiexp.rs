@@ -93,15 +93,22 @@ fn calc_window_size(n: usize, exp_bits: usize, core_count: usize) -> usize {
 /// Calculates the number of terms that could optimally be calculated on the GPU, if the GPU had
 /// an unlimited amount of memory.
 // TODO vmx 2022-05-30: change from `core_count` to `work_units`, which is `2 * core_count`.
+// TODO vmx 2022-06-07: Try to find out why `e^window_size` is optimal.
 fn calc_best_chunk_size(max_window_size: usize, core_count: usize, exp_bits: usize) -> usize {
     // Best chunk-size (N) can also be calculated using the same logic as calc_window_size:
     // n = e^window_size * window_size * 2 * core_count / exp_bits
-    let max_buckets_per_work_unit = (1 << MAX_WINDOW_SIZE) - 1;
-    let work_units = 2 * core_count;
-    div_ceil(
-        max_buckets_per_work_unit * max_window_size * work_units,
-        exp_bits,
-    )
+    //let e_window_size = (max_window_size as f64).exp().ceil() as usize;
+    //let work_units = 2 * core_count;
+    //div_ceil(
+    //    e_window_size * max_window_size * work_units,
+    //    exp_bits,
+    //)
+    (((max_window_size as f64).exp() as f64)
+       * (max_window_size as f64)
+       * 2f64
+       * (core_count as f64)
+       / (exp_bits as f64))
+       .ceil() as usize
 }
 
 /// Calculates the maximum number of terms that can be put onto the GPU memory.
