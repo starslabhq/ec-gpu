@@ -5,6 +5,9 @@ members = [
 ]
 
 [patch.crates-io]
-group = { path = "../upstream/group" }
-blstrs = { path = "../blstrs" }
+#group = { path = "../upstream/group" }
+#blstrs = { path = "../blstrs" }
+#ec-gpu = { path = "./ec-gpu" }
+blstrs = { git = "https://github.com/filecoin-project/blstrs", branch = "ec-gpu-impl" }
+group = { git = "https://github.com/filecoin-project/group", branch = "revive-basefield" }
 ec-gpu = { path = "./ec-gpu" }
