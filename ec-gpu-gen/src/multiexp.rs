@@ -244,8 +244,7 @@ where
 
             // The global work size follows CUDA's definition and is the number of
             // `LOCAL_WORK_SIZE` sized thread groups.
-            let global_work_size =
-                (num_windows * num_groups + LOCAL_WORK_SIZE - 1) / LOCAL_WORK_SIZE;
+            let global_work_size = div_ceil(num_windows * num_groups, LOCAL_WORK_SIZE);
 
             let kernel_name = format!(
                 "{}_{}_bellman_multiexp",
