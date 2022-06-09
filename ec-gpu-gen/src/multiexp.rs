@@ -174,7 +174,8 @@ where
             "vmx: multiexp: create: best chunk size possible: {}",
             best_n
         );
-        let n = std::cmp::min(max_n, best_n);
+        //let n = std::cmp::min(max_n, best_n);
+        let n = max_n;
         debug!("vmx: multiexp: create: actual chunk size: {}", n);
 
         let program = program::program(device)?;
