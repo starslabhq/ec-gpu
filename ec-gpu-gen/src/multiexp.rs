@@ -219,7 +219,9 @@ where
         let exp_bits = exp_size::<G::Scalar>() * 8;
         let window_size = calc_window_size(n as usize, exp_bits, self.core_count);
         let num_windows = ((exp_bits as f64) / (window_size as f64)).ceil() as usize;
+        debug!("vmx: multiexp: num_windows: {}", num_windows);
         let num_groups = calc_num_groups(self.core_count, num_windows);
+        debug!("vmx: multiexp: num_groups: {}", num_groups);
         let bucket_len = 1 << window_size;
 
         // Each group will have `num_windows` threads and as there are `num_groups` groups, there will
