@@ -540,7 +540,7 @@ fil_logger::maybe_init();
                 multiexp_gpu(&pool, (g.clone(), 0), FullDensity, v.clone(), &mut kern).unwrap();
             let gpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
             println!("GPU took {}ms.", gpu_dur);
-
+/*
             now = Instant::now();
             let cpu = multiexp_cpu(&pool, (g.clone(), 0), FullDensity, v.clone())
                 .wait()
@@ -551,7 +551,7 @@ fil_logger::maybe_init();
             println!("Speedup: x{}", cpu_dur as f32 / gpu_dur as f32);
 
             assert_eq!(cpu, gpu);
-
+*/
             println!("============================");
 
             bases = [bases.clone(), bases.clone()].concat();
