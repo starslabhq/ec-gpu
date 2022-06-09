@@ -511,7 +511,7 @@ mod tests {
     fn gpu_multiexp_consistency() {
 fil_logger::maybe_init();
         const MAX_LOG_D: usize = 28;
-        const START_LOG_D: usize = 10;
+        const START_LOG_D: usize = 16;
         let devices = Device::all();
         let mut kern = MultiexpKernel::<<Bls12 as Engine>::G1Affine>::create(&devices)
             .expect("Cannot initialize kernel!");
@@ -519,7 +519,7 @@ fil_logger::maybe_init();
 
         let mut rng = rand::thread_rng();
 
-        let mut bases = (0..(1 << 10))
+        let mut bases = (0..(1 << START_LOG_D))
             .map(|_| <Bls12 as Engine>::G1::random(&mut rng).to_affine())
             .collect::<Vec<_>>();
 
