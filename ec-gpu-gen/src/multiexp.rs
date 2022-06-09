@@ -507,6 +507,7 @@ mod tests {
     #[test]
     fn gpu_multiexp_consistency() {
         const MAX_LOG_D: usize = 16;
+fil_logger::maybe_init();
         const START_LOG_D: usize = 10;
         let devices = Device::all();
         let mut kern = MultiexpKernel::<<Bls12 as Engine>::G1Affine>::create(&devices)
