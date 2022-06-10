@@ -16,11 +16,12 @@ use crate::{
 
 // TODO vmx 2022-05-24: document what MAX_WINDOW_SIZE is about.
 const MAX_WINDOW_SIZE: usize = 10;
-//const LOCAL_WORK_SIZE: usize = 256;
+// In CUDA this is the number of blocks per grid (grid size)
 const LOCAL_WORK_SIZE: usize = 128;
-//const MEMORY_PADDING: f64 = 0.2f64; // Let 20% of GPU memory be free
-const MEMORY_PADDING: f64 = 0.1f64; // Let 10% of GPU memory be free, this is an arbitrary value
-                                    // The number of units the work is split into. One unit will result in one CUDA thread.
+// TODO vmx 2022-06-10: Check if een less free space is possible.
+// Let 10% of GPU memory be free, this is an arbitrary value
+const MEMORY_PADDING: f64 = 0.1f64;
+// The number of units the work is split into. One unit will result in one CUDA thread.
 const NUM_WORK_UNITS: usize = 8192;
 
 /// Divide and ceil to the next value.
