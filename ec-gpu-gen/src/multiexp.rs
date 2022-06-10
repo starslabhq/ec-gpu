@@ -96,6 +96,7 @@ fn calc_window_size(n: usize, exp_bits: usize, core_count: usize) -> usize {
 
 fn vmx_calc_window_size(n: usize, exp_bits: usize, work_units: usize) -> usize {
     let exp_bits_per_work_unit = div_ceil(exp_bits * n, work_units);
+    debug!("vmx: multiexp: vmx_calc_window_size: exp_bits_per_work_unit: {}", exp_bits_per_work_unit);
     std::cmp::min(exp_bits_per_work_unit, MAX_WINDOW_SIZE)
 }
 
