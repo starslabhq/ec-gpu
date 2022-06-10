@@ -101,8 +101,13 @@ fn calc_window_size(n: usize, exp_bits: usize, core_count: usize) -> usize {
 //    debug!("vmx: multiexp: vmx_calc_window_size: exp_bits_per_work_unit: {}", exp_bits_per_work_unit);
 //    std::cmp::min(exp_bits_per_work_unit, MAX_WINDOW_SIZE)
 //}
-fn vmx_calc_window_size(num_terms: usize, num_windows: usize, work_units: usize) -> usize {
-   let window_size = (div_ceil(num_terms, num_windows * work_units) as f64).log2() as usize;
+//fn vmx_calc_window_size(num_terms: usize, num_windows: usize, work_units: usize) -> usize {
+//   let window_size = (div_ceil(num_terms, num_windows * work_units) as f64).log2() as usize;
+//   debug!("vmx: multiexp: vmx_calc_window_size: window_size: {}", window_size);
+//   std::cmp::min(window_size, MAX_WINDOW_SIZE)
+//}
+fn vmx_calc_window_size(num_terms: usize, work_units: usize) -> usize {
+   let window_size = (div_ceil(num_terms, work_units) as f64).log2() as usize;
    debug!("vmx: multiexp: vmx_calc_window_size: window_size: {}", window_size);
    std::cmp::min(window_size, MAX_WINDOW_SIZE)
 }
@@ -235,12 +240,15 @@ where
         );
 
         let exp_bits = exp_size::<G::Scalar>() * 8;
-        //let num_windows = ((exp_bits as f64) / (window_size as f64)).ceil() as usize;
-        let num_windows = 8;
-        debug!("vmx: multiexp: num_windows: {}", num_windows);
-        let window_size = vmx_calc_window_size(n as usize, num_windows, Self::num_work_units());
-        //let window_size = MAX_WINDOW_SIZE;
+        //let window_size = vmx_calc_window_size(n as usize, num_windows, Self::num_work_units());
+        let window_size = vmx_calc_window_size(n as usize, Self::num_work_units());
         debug!("vmx: multiexp: window_size: {}", window_size);
+        //let window_size = MAX_WINDOW_SIZE;
+        //let num_windows = ((exp_bits as f64) / (window_size as f64)).ceil() as usize;
+        //let num_windows = 8;
+        // windows_size * num_windows needs to be >= 256 in order for the kernel to work correctly.
+        let num_windows = div_ceil(256, window_size);
+        debug!("vmx: multiexp: num_windows: {}", num_windows);
         //let num_groups = calc_num_groups(self.core_count, num_windows);
         let num_groups = vmx_calc_num_groups(Self::num_work_units(), num_windows);
         debug!("vmx: multiexp: num_groups: {}", num_groups);
