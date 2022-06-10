@@ -163,7 +163,7 @@ where
         // windows_size * num_windows needs to be >= 256 in order for the kernel to work correctly.
         let num_windows = div_ceil(256, window_size);
         debug!("vmx: multiexp: num_windows: {}", num_windows);
-        let num_groups = div_ceil(NUM_WORK_UNITS, num_windows);
+        let num_groups = NUM_WORK_UNITS / num_windows;
         debug!("vmx: multiexp: num_groups: {}", num_groups);
         debug!(
             "vmx: multiexp: elements per groups: {}",
