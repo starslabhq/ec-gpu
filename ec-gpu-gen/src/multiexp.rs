@@ -20,7 +20,7 @@ const MAX_WINDOW_SIZE: usize = 10;
 const LOCAL_WORK_SIZE: usize = 128;
 //const MEMORY_PADDING: f64 = 0.2f64; // Let 20% of GPU memory be free
 const MEMORY_PADDING: f64 = 0.1f64; // Let 10% of GPU memory be free, this is an arbitrary value
-// The number of units the work is split into. One unit will result in one CUDA thread.
+                                    // The number of units the work is split into. One unit will result in one CUDA thread.
 const NUM_WORK_UNITS: usize = 8192;
 
 /// Divide and ceil to the next value.
@@ -56,9 +56,12 @@ where
 /// leads to more windows, hence more units to work on, as we split the work into `num_windows *
 /// num_groups`.
 fn calc_window_size(num_terms: usize) -> usize {
-   let window_size = (div_ceil(num_terms, NUM_WORK_UNITS) as f64).log2() as usize;
-   debug!("vmx: multiexp: vmx_calc_window_size: window_size: {}", window_size);
-   std::cmp::min(window_size, MAX_WINDOW_SIZE)
+    let window_size = (div_ceil(num_terms, NUM_WORK_UNITS) as f64).log2() as usize;
+    debug!(
+        "vmx: multiexp: vmx_calc_window_size: window_size: {}",
+        window_size
+    );
+    std::cmp::min(window_size, MAX_WINDOW_SIZE)
 }
 
 /// Calculates the maximum number of terms that can be put onto the GPU memory.
@@ -112,7 +115,10 @@ where
     ) -> EcResult<Self> {
         let mem = device.memory();
         let chunk_size = calc_chunk_size::<G>(mem);
-        debug!("vmx: multiexp: create: max chunk size for GPU: {}", chunk_size);
+        debug!(
+            "vmx: multiexp: create: max chunk size for GPU: {}",
+            chunk_size
+        );
 
         let program = program::program(device)?;
 
@@ -159,7 +165,10 @@ where
         debug!("vmx: multiexp: num_windows: {}", num_windows);
         let num_groups = div_ceil(NUM_WORK_UNITS, num_windows);
         debug!("vmx: multiexp: num_groups: {}", num_groups);
-        debug!("vmx: multiexp: elements per groups: {}", div_ceil(exponents.len(), num_groups));
+        debug!(
+            "vmx: multiexp: elements per groups: {}",
+            div_ceil(exponents.len(), num_groups)
+        );
         let bucket_len = 1 << window_size;
 
         // Each group will have `num_windows` threads and as there are `num_groups` groups, there will
@@ -168,24 +177,45 @@ where
 
         let closures = program_closures!(|program, _arg| -> EcResult<Vec<G::Curve>> {
             let base_buffer = program.create_buffer_from_slice(bases)?;
-            debug!("vmx: multiexp: program: base buffer mem size: {}", std::mem::size_of::<G>() * bases.len());
+            debug!(
+                "vmx: multiexp: program: base buffer mem size: {}",
+                std::mem::size_of::<G>() * bases.len()
+            );
             let exp_buffer = program.create_buffer_from_slice(exponents)?;
-            debug!("vmx: multiexp: program: exp buffer mem size: {}", std::mem::size_of::<<G::Scalar as PrimeField>::Repr>() * exponents.len());
+            debug!(
+                "vmx: multiexp: program: exp buffer mem size: {}",
+                std::mem::size_of::<<G::Scalar as PrimeField>::Repr>() * exponents.len()
+            );
 
             // It is safe as the GPU will initialize that buffer
             let bucket_buffer =
                 unsafe { program.create_buffer::<G::Curve>(NUM_WORK_UNITS * bucket_len)? };
-            debug!("vmx: multiexp: program: bucket buffer mem size: {}", std::mem::size_of::<G::Curve>() * NUM_WORK_UNITS * bucket_len);
+            debug!(
+                "vmx: multiexp: program: bucket buffer mem size: {}",
+                std::mem::size_of::<G::Curve>() * NUM_WORK_UNITS * bucket_len
+            );
             // It is safe as the GPU will initialize that buffer
             let result_buffer = unsafe { program.create_buffer::<G::Curve>(NUM_WORK_UNITS)? };
-            debug!("vmx: multiexp: program: result buffer mem size: {}", std::mem::size_of::<G::Curve>() * NUM_WORK_UNITS);
+            debug!(
+                "vmx: multiexp: program: result buffer mem size: {}",
+                std::mem::size_of::<G::Curve>() * NUM_WORK_UNITS
+            );
 
-            debug!("vmx: multiexp: program: total alloced size: {}", std::mem::size_of::<G>() * bases.len() + std::mem::size_of::<<G::Scalar as PrimeField>::Repr>() * exponents.len() + std::mem::size_of::<G::Curve>() * NUM_WORK_UNITS * bucket_len +  std::mem::size_of::<G::Curve>() * NUM_WORK_UNITS);
+            debug!(
+                "vmx: multiexp: program: total alloced size: {}",
+                std::mem::size_of::<G>() * bases.len()
+                    + std::mem::size_of::<<G::Scalar as PrimeField>::Repr>() * exponents.len()
+                    + std::mem::size_of::<G::Curve>() * NUM_WORK_UNITS * bucket_len
+                    + std::mem::size_of::<G::Curve>() * NUM_WORK_UNITS
+            );
 
             // The global work size follows CUDA's definition and is the number of
             // `LOCAL_WORK_SIZE` sized thread groups.
             let global_work_size = div_ceil(num_windows * num_groups, LOCAL_WORK_SIZE);
-            debug!("vmx: multiexp: program: global work size: {}", global_work_size);
+            debug!(
+                "vmx: multiexp: program: global work size: {}",
+                global_work_size
+            );
 
             let kernel_name = format!(
                 "{}_{}_bellman_multiexp",
@@ -446,7 +476,7 @@ mod tests {
 
     #[test]
     fn gpu_multiexp_consistency() {
-fil_logger::maybe_init();
+        fil_logger::maybe_init();
         const MAX_LOG_D: usize = 28;
         const START_LOG_D: usize = 16;
         let devices = Device::all();
@@ -477,18 +507,18 @@ fil_logger::maybe_init();
                 multiexp_gpu(&pool, (g.clone(), 0), FullDensity, v.clone(), &mut kern).unwrap();
             let gpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
             println!("GPU took {}ms.", gpu_dur);
-/*
-            now = Instant::now();
-            let cpu = multiexp_cpu(&pool, (g.clone(), 0), FullDensity, v.clone())
-                .wait()
-                .unwrap();
-            let cpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
-            println!("CPU took {}ms.", cpu_dur);
+            /*
+                        now = Instant::now();
+                        let cpu = multiexp_cpu(&pool, (g.clone(), 0), FullDensity, v.clone())
+                            .wait()
+                            .unwrap();
+                        let cpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
+                        println!("CPU took {}ms.", cpu_dur);
 
-            println!("Speedup: x{}", cpu_dur as f32 / gpu_dur as f32);
+                        println!("Speedup: x{}", cpu_dur as f32 / gpu_dur as f32);
 
-            assert_eq!(cpu, gpu);
-*/
+                        assert_eq!(cpu, gpu);
+            */
             println!("============================");
 
             bases = [bases.clone(), bases.clone()].concat();
