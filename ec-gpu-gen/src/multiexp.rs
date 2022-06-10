@@ -236,7 +236,7 @@ where
 
         let exp_bits = exp_size::<G::Scalar>() * 8;
         //let num_windows = ((exp_bits as f64) / (window_size as f64)).ceil() as usize;
-        let num_windows = 12;
+        let num_windows = 8;
         debug!("vmx: multiexp: num_windows: {}", num_windows);
         let window_size = vmx_calc_window_size(n as usize, num_windows, Self::num_work_units());
         //let window_size = MAX_WINDOW_SIZE;
