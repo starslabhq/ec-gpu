@@ -16,8 +16,10 @@ use crate::{
 
 // TODO vmx 2022-05-24: document what MAX_WINDOW_SIZE is about.
 const MAX_WINDOW_SIZE: usize = 10;
-const LOCAL_WORK_SIZE: usize = 256;
-const MEMORY_PADDING: f64 = 0.2f64; // Let 20% of GPU memory be free
+//const LOCAL_WORK_SIZE: usize = 256;
+const LOCAL_WORK_SIZE: usize = 128;
+//const MEMORY_PADDING: f64 = 0.2f64; // Let 20% of GPU memory be free
+const MEMORY_PADDING: f64 = 0.1f64; // Let 10% of GPU memory be free, this is an arbitrary value
 const DEFAULT_CUDA_CORES: usize = 2560;
 
 /// Divide and ceil to the next value.
@@ -318,7 +320,8 @@ where
 
     //fn num_work_units(&self) -> usize {
     fn num_work_units() -> usize {
-        16200
+        //16200
+        8100
     }
 }
 
