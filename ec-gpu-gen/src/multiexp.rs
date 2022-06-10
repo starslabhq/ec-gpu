@@ -225,6 +225,7 @@ where
         debug!("vmx: multiexp: num_windows: {}", num_windows);
         let num_groups = calc_num_groups(self.core_count, num_windows);
         debug!("vmx: multiexp: num_groups: {}", num_groups);
+        debug!("vmx: multiexp: elements per groups: {}", div_ceil(exponents.len(), num_groups));
         let bucket_len = 1 << window_size;
 
         // Each group will have `num_windows` threads and as there are `num_groups` groups, there will
@@ -250,6 +251,7 @@ where
             // The global work size follows CUDA's definition and is the number of
             // `LOCAL_WORK_SIZE` sized thread groups.
             let global_work_size = div_ceil(num_windows * num_groups, LOCAL_WORK_SIZE);
+            debug!("vmx: multiexp: program: global work size: {}", global_work_size);
 
             let kernel_name = format!(
                 "{}_{}_bellman_multiexp",
@@ -269,6 +271,8 @@ where
                 .arg(&(window_size as u32))
                 .run()?;
 
+            // TODO vmx 2022-06-09: I'm pretty sure this should be `num_windows * num_groups`
+            // instead as it's the total number of threads
             let mut results = vec![G::Curve::identity(); 2 * self.core_count];
             program.read_into_buffer(&result_buffer, &mut results)?;
 
