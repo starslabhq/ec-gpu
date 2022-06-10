@@ -328,8 +328,7 @@ where
 
     //fn num_work_units(&self) -> usize {
     fn num_work_units() -> usize {
-        //16200
-        8100
+        8192
     }
 }
 
