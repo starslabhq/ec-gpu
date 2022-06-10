@@ -56,7 +56,9 @@ where
 /// leads to more windows, hence more units to work on, as we split the work into `num_windows *
 /// num_groups`.
 fn calc_window_size(num_terms: usize) -> usize {
-    let window_size = (div_ceil(num_terms, NUM_WORK_UNITS) as f64).log2() as usize;
+    // The window size was determined by running the `gpu_multiexp_consistency` test and looking
+    // at the resulting numbers.
+    let window_size = ((div_ceil(num_terms, NUM_WORK_UNITS) as f64).log2() as usize) + 2;
     debug!(
         "vmx: multiexp: vmx_calc_window_size: window_size: {}",
         window_size
