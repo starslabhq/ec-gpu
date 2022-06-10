@@ -47,7 +47,7 @@ where
     G: PrimeCurveAffine,
 {
     program: Program,
-    core_count: usize,
+    //core_count: usize,
     /// The number of exponentiations the GPU can handle in a single execution of the kernel.
     n: usize,
     /// An optional function which will be called at places where it is possible to abort the
@@ -61,6 +61,10 @@ where
 fn calc_num_groups(core_count: usize, num_windows: usize) -> usize {
     // Observations show that we get the best performance when num_groups * num_windows ~= 2 * CUDA_CORES
     2 * core_count / num_windows
+}
+
+fn vmx_calc_num_groups(work_units: usize, num_windows: usize) -> usize {
+    work_units / num_windows
 }
 
 /// Calculates the window size, based on the given number of terms.
@@ -90,6 +94,11 @@ fn calc_window_size(n: usize, exp_bits: usize, core_count: usize) -> usize {
     MAX_WINDOW_SIZE
 }
 
+fn vmx_calc_window_size(n: usize, exp_bits: usize, work_units: usize) -> usize {
+    let exp_bits_per_work_unit = div_ceil(exp_bits * n, work_units);
+    std::cmp::min(exp_bits_per_work_unit, MAX_WINDOW_SIZE)
+}
+
 /// Calculates the number of terms that could optimally be calculated on the GPU, if the GPU had
 /// an unlimited amount of memory.
 // TODO vmx 2022-05-30: change from `core_count` to `work_units`, which is `2 * core_count`.
@@ -115,7 +124,8 @@ fn calc_best_chunk_size(max_window_size: usize, core_count: usize, exp_bits: usi
 // The core count is needed as it determines how much auxiliary space we need.
 // TODO vmx 2022-05-30: change from `core_count` to `work_units`, which is `2 * core_count`.
 // TODO vmx 2022-05-30: rename to `calc_max_chunk_size`.
-fn calc_chunk_size<G>(mem: u64, core_count: usize) -> usize
+//fn calc_chunk_size<G>(mem: u64, core_count: usize) -> usize
+fn calc_chunk_size<G>(mem: u64, work_units: usize) -> usize
 where
     G: PrimeCurveAffine,
     G::Scalar: PrimeField,
@@ -136,7 +146,6 @@ where
     // The number of buckets needed for one work unit is `2^window_size - 1`.
     // TODO vmx 2022-06-07: Check why the global buffer allocation is not using the `- 1`.
     let max_buckets_per_work_unit = 1 << MAX_WINDOW_SIZE;
-    let work_units = 2 * core_count;
     // The amount of memory (in bytes) we need for the intermediate steps (buckets).
     let buckets_size = work_units * max_buckets_per_work_unit * proj_size;
     // The amount of memory (in bytes) we need for the results.
@@ -165,15 +174,15 @@ where
         maybe_abort: Option<&'a (dyn Fn() -> bool + Send + Sync)>,
     ) -> EcResult<Self> {
         let exp_bits = exp_size::<G::Scalar>() * 8;
-        let core_count = get_cuda_cores_count(&device.name());
+        //let core_count = get_cuda_cores_count(&device.name());
         let mem = device.memory();
-        let max_n = calc_chunk_size::<G>(mem, core_count);
+        let max_n = calc_chunk_size::<G>(mem, Self::num_work_units());
         debug!("vmx: multiexp: create: max chunk size for GPU: {}", max_n);
-        let best_n = calc_best_chunk_size(MAX_WINDOW_SIZE, core_count, exp_bits);
-        debug!(
-            "vmx: multiexp: create: best chunk size possible: {}",
-            best_n
-        );
+        //let best_n = calc_best_chunk_size(MAX_WINDOW_SIZE, core_count, exp_bits);
+        //debug!(
+        //    "vmx: multiexp: create: best chunk size possible: {}",
+        //    best_n
+        //);
         //let n = std::cmp::min(max_n, best_n);
         let n = max_n;
         debug!("vmx: multiexp: create: actual chunk size: {}", n);
@@ -182,7 +191,7 @@ where
 
         Ok(SingleMultiexpKernel {
             program,
-            core_count,
+            //core_count,
             n,
             maybe_abort,
             _phantom: std::marker::PhantomData,
@@ -218,12 +227,13 @@ where
         );
 
         let exp_bits = exp_size::<G::Scalar>() * 8;
-        //let window_size = calc_window_size(n as usize, exp_bits, self.core_count);
-        let window_size = MAX_WINDOW_SIZE;
+        let window_size = vmx_calc_window_size(n as usize, exp_bits, Self::num_work_units());
+        //let window_size = MAX_WINDOW_SIZE;
         debug!("vmx: multiexp: window_size: {}", window_size);
         let num_windows = ((exp_bits as f64) / (window_size as f64)).ceil() as usize;
         debug!("vmx: multiexp: num_windows: {}", num_windows);
-        let num_groups = calc_num_groups(self.core_count, num_windows);
+        //let num_groups = calc_num_groups(self.core_count, num_windows);
+        let num_groups = vmx_calc_num_groups(Self::num_work_units(), num_windows);
         debug!("vmx: multiexp: num_groups: {}", num_groups);
         debug!("vmx: multiexp: elements per groups: {}", div_ceil(exponents.len(), num_groups));
         let bucket_len = 1 << window_size;
@@ -240,13 +250,13 @@ where
 
             // It is safe as the GPU will initialize that buffer
             let bucket_buffer =
-                unsafe { program.create_buffer::<G::Curve>(2 * self.core_count * bucket_len)? };
-            debug!("vmx: multiexp: program: bucket buffer mem size: {}", std::mem::size_of::<G::Curve>() * 2 * self.core_count * bucket_len);
+                unsafe { program.create_buffer::<G::Curve>(Self::num_work_units() * bucket_len)? };
+            debug!("vmx: multiexp: program: bucket buffer mem size: {}", std::mem::size_of::<G::Curve>() * Self::num_work_units() * bucket_len);
             // It is safe as the GPU will initialize that buffer
-            let result_buffer = unsafe { program.create_buffer::<G::Curve>(2 * self.core_count)? };
-            debug!("vmx: multiexp: program: result buffer mem size: {}", std::mem::size_of::<G::Curve>() * 2 * self.core_count);
+            let result_buffer = unsafe { program.create_buffer::<G::Curve>(Self::num_work_units())? };
+            debug!("vmx: multiexp: program: result buffer mem size: {}", std::mem::size_of::<G::Curve>() * Self::num_work_units());
 
-            debug!("vmx: multiexp: program: total alloced size: {}", std::mem::size_of::<G>() * bases.len() + std::mem::size_of::<<G::Scalar as PrimeField>::Repr>() * exponents.len() + std::mem::size_of::<G::Curve>() * 2 * self.core_count * bucket_len +  std::mem::size_of::<G::Curve>() * 2 * self.core_count);
+            debug!("vmx: multiexp: program: total alloced size: {}", std::mem::size_of::<G>() * bases.len() + std::mem::size_of::<<G::Scalar as PrimeField>::Repr>() * exponents.len() + std::mem::size_of::<G::Curve>() * Self::num_work_units() * bucket_len +  std::mem::size_of::<G::Curve>() * Self::num_work_units());
 
             // The global work size follows CUDA's definition and is the number of
             // `LOCAL_WORK_SIZE` sized thread groups.
@@ -273,7 +283,7 @@ where
 
             // TODO vmx 2022-06-09: I'm pretty sure this should be `num_windows * num_groups`
             // instead as it's the total number of threads
-            let mut results = vec![G::Curve::identity(); 2 * self.core_count];
+            let mut results = vec![G::Curve::identity(); Self::num_work_units()];
             program.read_into_buffer(&result_buffer, &mut results)?;
 
             Ok(results)
@@ -299,8 +309,9 @@ where
         Ok(acc)
     }
 
-    fn num_work_units(&self) -> usize {
-        self.core_count * 2
+    //fn num_work_units(&self) -> usize {
+    fn num_work_units() -> usize {
+        4100
     }
 }
 
