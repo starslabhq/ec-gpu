@@ -100,7 +100,7 @@ fn calc_window_size(n: usize, exp_bits: usize, core_count: usize) -> usize {
 //    std::cmp::min(exp_bits_per_work_unit, MAX_WINDOW_SIZE)
 //}
 fn vmx_calc_window_size(num_terms: usize, num_windows: usize, work_units: usize) -> usize {
-   let window_size = div_ceil(num_terms, num_windows * work_units);
+   let window_size = (div_ceil(num_terms, num_windows * work_units) as f64).log2() as usize;
    debug!("vmx: multiexp: vmx_calc_window_size: window_size: {}", window_size);
    std::cmp::min(window_size, MAX_WINDOW_SIZE)
 }
@@ -234,7 +234,7 @@ where
 
         let exp_bits = exp_size::<G::Scalar>() * 8;
         //let num_windows = ((exp_bits as f64) / (window_size as f64)).ceil() as usize;
-        let num_windows = 24;
+        let num_windows = 12;
         debug!("vmx: multiexp: num_windows: {}", num_windows);
         let window_size = vmx_calc_window_size(n as usize, num_windows, Self::num_work_units());
         //let window_size = MAX_WINDOW_SIZE;
@@ -318,7 +318,7 @@ where
 
     //fn num_work_units(&self) -> usize {
     fn num_work_units() -> usize {
-        4100
+        16200
     }
 }
 
