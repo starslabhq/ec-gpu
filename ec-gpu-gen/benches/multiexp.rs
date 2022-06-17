@@ -21,7 +21,7 @@ fn bench_multiexp(crit: &mut Criterion) {
 
     let mut rng = rand::thread_rng();
 
-    let num_elements = (10..20).map(|shift| 1 << shift).collect::<Vec<_>>();
+    let num_elements = (10..28).map(|shift| 1 << shift).collect::<Vec<_>>();
     for num in num_elements {
         group.bench_with_input(BenchmarkId::from_parameter(num), &num, |bencher, &num| {
             let bases_raw = (0..num)
