@@ -32,6 +32,7 @@ fn gpu_multiexp(num_elements: usize) {
 
 fn bench_multiexp(crit: &mut Criterion) {
     let mut group = crit.benchmark_group("multiexp");
+    group.sample_size(20);
     let num_elements = (10..20).map(|shift| 1 << shift).collect::<Vec<_>>();
     for num in num_elements {
         group.bench_with_input(BenchmarkId::from_parameter(num), &num, |bencher, &num| {
