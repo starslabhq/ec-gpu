@@ -36,7 +36,7 @@ fn bench_multiexp(crit: &mut Criterion) {
     for num in num_elements {
         group.bench_with_input(BenchmarkId::from_parameter(num), &num, |bencher, &num| {
             bencher.iter(|| {
-                black_box(gpu_multiexp(1024));
+                black_box(gpu_multiexp(num));
             })
         });
     }
