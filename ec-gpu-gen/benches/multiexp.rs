@@ -10,6 +10,12 @@ use group::{Curve, Group};
 use pairing::Engine;
 use rust_gpu_tools::Device;
 
+/// The power that will be used to define the maximum number of elements. The number of elements
+/// is `2^MAX_ELEMENTS_POWER`.
+const MAX_ELEMENTS_POWER: usize = 28;
+/// The maximum number of elements for this benchmark.
+const MAX_ELEMENTS: usize = 1 << MAX_ELEMENTS_POWER;
+
 fn bench_multiexp(crit: &mut Criterion) {
     let mut group = crit.benchmark_group("multiexp");
     // The difference between runs is so little, hence a low sample size is OK.
@@ -20,20 +26,18 @@ fn bench_multiexp(crit: &mut Criterion) {
     let pool = Worker::new();
 
     let mut rng = rand::thread_rng();
+    let max_bases: Vec<_> = (0..MAX_ELEMENTS)
+        .map(|_| <Bls12 as Engine>::G1::random(&mut rng).to_affine())
+        .collect();
+    let max_exponents: Vec<_> = (0..MAX_ELEMENTS)
+        .map(|_| <Bls12 as Engine>::Fr::random(&mut rng).to_repr())
+        .collect();
 
-    let num_elements = (10..28).map(|shift| 1 << shift).collect::<Vec<_>>();
+    let num_elements: Vec<_> = (10..MAX_ELEMENTS_POWER).map(|shift| 1 << shift).collect();
     for num in num_elements {
         group.bench_with_input(BenchmarkId::from_parameter(num), &num, |bencher, &num| {
-            let bases_raw = (0..num)
-                .map(|_| <Bls12 as Engine>::G1::random(&mut rng).to_affine())
-                .collect::<Vec<_>>();
-
-            let exponents_raw = (0..num)
-                .map(|_| <Bls12 as Engine>::Fr::random(&mut rng).to_repr())
-                .collect::<Vec<_>>();
-            let exponents = Arc::new(exponents_raw);
-
-            let (bases, skip) = SourceBuilder::get((Arc::new(bases_raw), 0));
+            let (bases, skip) = SourceBuilder::get((Arc::new(max_bases[0..num].to_vec()), 0));
+            let exponents = Arc::new(max_exponents[0..num].to_vec());
 
             bencher.iter(|| {
                 black_box(
