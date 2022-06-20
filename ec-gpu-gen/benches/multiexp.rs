@@ -8,6 +8,8 @@ use ec_gpu_gen::threadpool::Worker;
 use ff::{Field, PrimeField};
 use group::{Curve, Group};
 use pairing::Engine;
+use rand::rngs::OsRng;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use rust_gpu_tools::Device;
 
 /// The power that will be used to define the maximum number of elements. The number of elements
@@ -24,13 +26,13 @@ fn bench_multiexp(crit: &mut Criterion) {
     let devices = Device::all();
     let mut kern = MultiexpKernel::<Bls12>::create(&devices).expect("Cannot initialize kernel!");
     let pool = Worker::new();
-
-    let mut rng = rand::thread_rng();
     let max_bases: Vec<_> = (0..MAX_ELEMENTS)
-        .map(|_| <Bls12 as Engine>::G1::random(&mut rng).to_affine())
+        .into_par_iter()
+        .map(|_| <Bls12 as Engine>::G1::random(OsRng).to_affine())
         .collect();
     let max_exponents: Vec<_> = (0..MAX_ELEMENTS)
-        .map(|_| <Bls12 as Engine>::Fr::random(&mut rng).to_repr())
+        .into_par_iter()
+        .map(|_| <Bls12 as Engine>::Fr::random(OsRng).to_repr())
         .collect();
 
     let num_elements: Vec<_> = (10..MAX_ELEMENTS_POWER).map(|shift| 1 << shift).collect();
