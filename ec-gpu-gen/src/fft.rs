@@ -277,7 +277,7 @@ mod tests {
     }
 
     #[test]
-    pub fn gpu_fft_consistency() {
+    pub fn fft() {
         let mut rng = rand::thread_rng();
 
         let worker = Worker::new();
@@ -318,7 +318,7 @@ mod tests {
     }
 
     #[test]
-    pub fn gpu_fft_many_consistency() {
+    pub fn fft_many() {
         let mut rng = rand::thread_rng();
 
         let worker = Worker::new();

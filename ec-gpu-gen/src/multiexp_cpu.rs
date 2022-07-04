@@ -371,7 +371,7 @@ where
     if let Some(query_size) = density_map.as_ref().get_query_size() {
         // If the density map has a known query size, it should not be
         // inconsistent with the number of exponents.
-        assert!(query_size == exponents.len());
+        assert_eq!(query_size, exponents.len());
     }
 
     pool.compute(move || multiexp_inner(bases, density_map, exponents, c))
@@ -385,9 +385,9 @@ mod tests {
     use pairing::bn256::Bn256;
     use pairing::group::ff::{Field, PrimeField};
     use pairing::group::Group;
-
     use pairing::group::prime::PrimeCurveAffine;
     use pairing::group::Curve;
+
     use rand::Rng;
     use rand_core::SeedableRng;
     use rand_xorshift::XorShiftRng;

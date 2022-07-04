@@ -393,19 +393,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use std::time::Instant;
 
-    use pairing::bn256;
     use pairing::bn256::Bn256;
     use pairing::group::ff::{Field, PrimeField};
     use pairing::group::Group;
-
     use pairing::group::prime::PrimeCurveAffine;
     use pairing::group::Curve;
-
-    // use ff::Field;
-    // use group::Curve;
 
     use crate::multiexp_cpu::{multiexp_cpu, FullDensity, QueryDensity, SourceBuilder};
 
