@@ -28,7 +28,7 @@ where
     /// calculations. If it returns true, the calculation will be aborted with an
     /// [`EcError::Aborted`].
     maybe_abort: Option<&'a (dyn Fn() -> bool + Send + Sync)>,
-    _phantom: std::marker::PhantomData<E::Scalar>,
+    _phantom: std::marker::PhantomData<<E as Engine>::Scalar>,
 }
 
 impl<'a, E: Engine + GpuEngine> SingleFftKernel<'a, E> {
@@ -56,21 +56,21 @@ impl<'a, E: Engine + GpuEngine> SingleFftKernel<'a, E> {
     /// Performs FFT on `input`
     /// * `omega` - Special value `omega` is used for FFT over finite-fields
     /// * `log_n` - Specifies log2 of number of elements
-    pub fn radix_fft(&mut self, input: &mut [E::Scalar], omega: &E::Scalar, log_n: u32) -> EcResult<()> {
-        let closures = program_closures!(|program, input: &mut [E::Scalar]| -> EcResult<()> {
+    pub fn radix_fft(&mut self, input: &mut [<E as Engine>::Scalar], omega: &<E as Engine>::Scalar, log_n: u32) -> EcResult<()> {
+        let closures = program_closures!(|program, input: &mut [<E as Engine>::Scalar]| -> EcResult<()> {
             let n = 1 << log_n;
             // All usages are safe as the buffers are initialized from either the host or the GPU
             // before they are read.
-            let mut src_buffer = unsafe { program.create_buffer::<E::Scalar>(n)? };
-            let mut dst_buffer = unsafe { program.create_buffer::<E::Scalar>(n)? };
+            let mut src_buffer = unsafe { program.create_buffer::<<E as Engine>::Scalar>(n)? };
+            let mut dst_buffer = unsafe { program.create_buffer::<<E as Engine>::Scalar>(n)? };
             // The precalculated values pq` and `omegas` are valid for radix degrees up to `max_deg`
             let max_deg = cmp::min(MAX_LOG2_RADIX, log_n);
 
             // Precalculate:
             // [omega^(0/(2^(deg-1))), omega^(1/(2^(deg-1))), ..., omega^((2^(deg-1)-1)/(2^(deg-1)))]
-            let mut pq = vec![E::Scalar::zero(); 1 << max_deg >> 1];
+            let mut pq = vec![<E as Engine>::Scalar::zero(); 1 << max_deg >> 1];
             let twiddle = omega.pow_vartime([(n >> max_deg) as u64]);
-            pq[0] = E::Scalar::one();
+            pq[0] = <E as Engine>::Scalar::one();
             if max_deg > 1 {
                 pq[1] = twiddle;
                 for i in 2..(1 << max_deg >> 1) {
@@ -81,7 +81,7 @@ impl<'a, E: Engine + GpuEngine> SingleFftKernel<'a, E> {
             let pq_buffer = program.create_buffer_from_slice(&pq)?;
 
             // Precalculate [omega, omega^2, omega^4, omega^8, ..., omega^(2^31)]
-            let mut omegas = vec![E::Scalar::zero(); 32];
+            let mut omegas = vec![<E as Engine>::Scalar::zero(); 32];
             omegas[0] = *omega;
             for i in 1..LOG2_MAX_ELEMENTS {
                 omegas[i] = omegas[i - 1].pow_vartime([2u64]);
@@ -115,7 +115,7 @@ impl<'a, E: Engine + GpuEngine> SingleFftKernel<'a, E> {
                     .arg(&dst_buffer)
                     .arg(&pq_buffer)
                     .arg(&omegas_buffer)
-                    .arg(&LocalBuffer::<E::Scalar>::new(1 << deg))
+                    .arg(&LocalBuffer::<<E as Engine>::Scalar>::new(1 << deg))
                     .arg(&n)
                     .arg(&log_p)
                     .arg(&deg)
@@ -198,7 +198,7 @@ where
     /// * `log_n` - Specifies log2 of number of elements
     ///
     /// Uses the first available GPU.
-    pub fn radix_fft(&mut self, input: &mut [E::Scalar], omega: &E::Scalar, log_n: u32) -> EcResult<()> {
+    pub fn radix_fft(&mut self, input: &mut [<E as Engine>::Scalar], omega: &<E as Engine>::Scalar, log_n: u32) -> EcResult<()> {
         self.kernels[0].radix_fft(input, omega, log_n)
     }
 
@@ -209,8 +209,8 @@ where
     /// Uses all available GPUs to distribute the work.
     pub fn radix_fft_many(
         &mut self,
-        inputs: &mut [&mut [E::Scalar]],
-        omegas: &[E::Scalar],
+        inputs: &mut [&mut [<E as Engine>::Scalar]],
+        omegas: &[<E as Engine>::Scalar],
         log_ns: &[u32],
     ) -> EcResult<()> {
         let n = inputs.len();
@@ -266,11 +266,11 @@ mod tests {
     use crate::fft_cpu::{parallel_fft, serial_fft};
     use crate::threadpool::Worker;
 
-    fn omega<E: Engine>(num_coeffs: usize) -> E::Scalar {
+    fn omega<E: Engine>(num_coeffs: usize) -> <E as Engine>::Scalar {
         // Compute omega, the 2^exp primitive root of unity
         let exp = (num_coeffs as f32).log2().floor() as u32;
-        let mut omega = E::Scalar::root_of_unity();
-        for _ in exp..E::Scalar::S {
+        let mut omega = <E as Engine>::Scalar::root_of_unity();
+        for _ in exp..<E as Engine>::Scalar::S {
             omega = omega.square();
         }
         omega
