@@ -251,16 +251,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use pairing::bn256;
     use pairing::bn256::Bn256;
     use pairing::group::ff::{Field, PrimeField};
     use pairing::group::Group;
-
-    use pairing::group::prime::PrimeCurveAffine;
-    use pairing::group::Curve;
-    
-    
     use std::time::Instant;
 
     use crate::fft_cpu::{parallel_fft, serial_fft};
