@@ -318,7 +318,7 @@ mod tests {
         let devices = Device::all();
         let mut kern = FftKernel::<Bn256>::create(&devices).expect("Cannot initialize kernel!");
 
-        for log_d in 20..=32 {
+        for log_d in 20..=26 {
             let d = 1 << log_d;
 
             let mut v11_coeffs = (0..d).map(|_| <Bn256 as Engine>::Scalar::random(&mut rng)).collect::<Vec<_>>();
@@ -360,7 +360,7 @@ mod tests {
             let cpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
             println!("CPU ({} cores) took {}ms.", 1 << log_threads, cpu_dur);
 
-            println!("Speedup: x{}", cpu_dur as f32 / gpu_dur as f32);
+            println!("Speedup: {} times", cpu_dur as f32 / gpu_dur as f32);
 
             assert!(v11_coeffs == v21_coeffs);
             assert!(v12_coeffs == v22_coeffs);
