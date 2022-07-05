@@ -360,7 +360,7 @@ mod tests {
             let cpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
             println!("CPU ({} cores) took {}ms.", 1 << log_threads, cpu_dur);
 
-            println!("Speedup: {} times", cpu_dur as f32 / gpu_dur as f32);
+            println!("Speedup: {}", cpu_dur as f32 / gpu_dur as f32);
 
             assert!(v11_coeffs == v21_coeffs);
             assert!(v12_coeffs == v22_coeffs);
