@@ -409,7 +409,7 @@ mod tests {
             acc
         }
 
-        const SAMPLES: usize = 1 << 14;
+        const SAMPLES: usize = 1 << 26;
 
         let rng = &mut rand::thread_rng();
         let v: Vec<<Bn256 as Engine>::Scalar> =

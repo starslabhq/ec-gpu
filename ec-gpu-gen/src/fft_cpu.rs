@@ -158,4 +158,37 @@ mod tests {
         let rng = &mut rand::thread_rng();
         test_consistency::<Bn256, _>(rng);
     }
+
+    #[test]
+    pub fn test_fft_asm() {
+        let mut rng = rand::thread_rng();
+
+        let worker = Worker::new();
+        let log_threads = worker.log_num_threads();
+        use std::time::Instant;
+
+        for log_d in 20..=29 {
+            let d = 1 << log_d;
+
+            let mut v1_coeffs = (0..d).map(|_| <Bn256 as Engine>::Scalar::random(&mut rng)).collect::<Vec<_>>();
+            let v1_omega = omega::<Bn256>(v1_coeffs.len());
+            let mut v2_coeffs = v1_coeffs.clone();
+            let v2_omega = v1_omega;
+
+            println!("Testing FFT for 2^ {} = {} elements...", log_d, d);
+
+            let mut now = Instant::now();
+
+            now = Instant::now();
+            if log_d <= log_threads {
+                serial_fft::<Bn256>(&mut v2_coeffs, &v2_omega, log_d);
+            } else {
+                parallel_fft::<Bn256>(&mut v2_coeffs, &worker, &v2_omega, log_d, log_threads);
+            }
+            let cpu_dur = now.elapsed().as_secs() * 1000 + now.elapsed().subsec_millis() as u64;
+            println!("CPU ({} cores) took {}ms.", 1 << log_threads, cpu_dur);
+            println!("============================");
+        }
+    }
+
 }

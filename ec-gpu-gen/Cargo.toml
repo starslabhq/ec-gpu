@@ -36,6 +36,7 @@ rand_xorshift = "0.3.0"
 criterion = "0.3.5"
 
 [build-dependencies]
+# features = ["asm","prefetch"]
 pairing = { git = 'https://github.com/starslabhq/pairing', package = "pairing_bn256", branch = "ecGpu" }
 ec-gpu = "0.1.0"
 execute = "0.2.9"

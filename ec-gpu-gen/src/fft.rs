@@ -277,7 +277,7 @@ mod tests {
         let devices = Device::all();
         let mut kern = FftKernel::<Bn256>::create(&devices).expect("Cannot initialize kernel!");
 
-        for log_d in 1..=20 {
+        for log_d in 20..=26 {
             let d = 1 << log_d;
 
             let mut v1_coeffs = (0..d).map(|_| <Bn256 as Engine>::Scalar::random(&mut rng)).collect::<Vec<_>>();
@@ -285,7 +285,7 @@ mod tests {
             let mut v2_coeffs = v1_coeffs.clone();
             let v2_omega = v1_omega;
 
-            println!("Testing FFT for {} elements...", d);
+            println!("Testing FFT for 2^ {} = {} elements...", log_d, d);
 
             let mut now = Instant::now();
             kern.radix_fft_many(&mut [&mut v1_coeffs], &[v1_omega], &[log_d])
